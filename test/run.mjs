@@ -48,6 +48,12 @@ let stopped = false;
 const stop = () => {
   if (stopped) return;
   stopped = true;
+  if (process.platform === "win32") {
+    // Windows kennt keine Prozessgruppen mit negativer PID - dort raeumt
+    // taskkill /T den ganzen Baum ab.
+    try { spawnSync("taskkill", ["/pid", String(dev.pid), "/T", "/F"], { stdio: "ignore" }); } catch (e) {}
+    return;
+  }
   try { process.kill(-dev.pid, "SIGTERM"); } catch (e) { /* schon weg */ }
   setTimeout(() => { try { process.kill(-dev.pid, "SIGKILL"); } catch (e) {} }, 2000).unref();
 };

@@ -100,6 +100,12 @@ openssl rand -hex 32          # Ausgabe merken
 npx wrangler secret put INGEST_TOKEN
 ```
 
+Unter Windows ohne openssl tut es auch die PowerShell:
+
+```powershell
+powershell -Command "[guid]::NewGuid().ToString('N') + [guid]::NewGuid().ToString('N')"
+```
+
 **4. Deployen:**
 
 ```bash

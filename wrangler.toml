@@ -1,0 +1,26 @@
+name = "fantasy-lol"
+main = "src/index.js"
+compatibility_date = "2026-01-15"
+
+# Das Frontend liegt als statische Dateien beim Worker - ein Deploy, eine URL.
+# Bewusst ohne not_found_handling: der Worker entscheidet selbst, was mit
+# unbekannten Pfaden passiert (siehe src/index.js). Sonst hinge es von der
+# Reihenfolge des Asset-Routers ab, ob /api/* noch beim Code ankommt.
+[assets]
+directory = "./public"
+binding = "ASSETS"
+
+# Nach "npx wrangler d1 create fantasy-lol" die ausgegebene database_id
+# hier eintragen. Siehe README, Abschnitt "Einrichten".
+[[d1_databases]]
+binding = "DB"
+database_name = "fantasy-lol"
+database_id = "HIER-DIE-ID-AUS-WRANGLER-D1-CREATE-EINTRAGEN"
+
+[vars]
+# Wie lange eine Anmeldung gilt (Tage).
+SESSION_DAYS = "30"
+
+# Geheimnisse (nicht hier eintragen, sondern:
+#   npx wrangler secret put INGEST_TOKEN
+# ) - der Sammler weist sich damit bei /api/ingest aus.

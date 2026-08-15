@@ -1,0 +1,17 @@
+{
+  "name": "fantasy-lol",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Fantasy-Liga fuer LoL-Esports: Kader aus echten Profispielern, Punkte aus echten Spielwerten.",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "db:local": "wrangler d1 execute fantasy-lol --local --file=migrations/0001_init.sql",
+    "db:remote": "wrangler d1 execute fantasy-lol --remote --file=migrations/0001_init.sql",
+    "test": "node test/run.mjs"
+  },
+  "devDependencies": {
+    "wrangler": "^4.123.0"
+  }
+}

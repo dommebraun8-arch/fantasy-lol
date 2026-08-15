@@ -10,12 +10,19 @@ compatibility_date = "2026-01-15"
 directory = "./public"
 binding = "ASSETS"
 
-# Nach "npx wrangler d1 create fantasy-lol" die ausgegebene database_id
-# hier eintragen. Siehe README, Abschnitt "Einrichten".
+# Angelegt mit "npx wrangler d1 create fantasy-lol".
+#
+# binding = "DB" muss so bleiben: der Code greift ueber env.DB zu. Wrangler
+# schlaegt beim Anlegen den Datenbanknamen als Binding vor ("fantasy_lol") -
+# uebernimmt man das, ist env.DB undefined und jede Anfrage endet im Fehler.
+#
+# Die database_id ist kein Geheimnis, sondern nur eine Kennung; ohne Zugang
+# zum Cloudflare-Konto laesst sich damit nichts anfangen. Deshalb steht sie
+# hier im Repo, wie in Cloudflares eigenen Vorlagen auch.
 [[d1_databases]]
 binding = "DB"
 database_name = "fantasy-lol"
-database_id = "HIER-DIE-ID-AUS-WRANGLER-D1-CREATE-EINTRAGEN"
+database_id = "843a1948-31d3-4972-90de-ddee07d0ca9b"
 
 [vars]
 # Wie lange eine Anmeldung gilt (Tage).

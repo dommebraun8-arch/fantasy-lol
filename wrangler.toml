@@ -27,6 +27,11 @@ database_id = "843a1948-31d3-4972-90de-ddee07d0ca9b"
 [vars]
 # Wie lange eine Anmeldung gilt (Tage).
 SESSION_DAYS = "30"
+# Runden fuer das Passwort-Hashing. Die Workers-Runtime laesst hoechstens
+# 100000 zu und lehnt alles darueber ab; der Code klemmt zusaetzlich. Nur
+# senken, wenn das CPU-Budget des Tarifs nicht reicht - der Code merkt sich je
+# Konto, mit wie vielen Runden es angelegt wurde, sperrt also niemanden aus.
+PBKDF2_ROUNDS = "100000"
 
 # Geheimnisse (nicht hier eintragen, sondern:
 #   npx wrangler secret put INGEST_TOKEN

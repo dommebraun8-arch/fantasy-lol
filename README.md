@@ -92,6 +92,10 @@ npx wrangler d1 create fantasy-lol
 npm run db:remote     # legt das Schema in der echten Datenbank an
 ```
 
+Das nutzt Wranglers Migrationssystem: es merkt sich, welche Dateien aus
+`migrations/` schon gelaufen sind, und wendet nur neue an. Nach einem `git pull`
+mit neuen Migrationen einfach nochmal aufrufen.
+
 **3. Token für den Sammler setzen.** Damit weist sich die GitHub Action bei
 `/api/ingest` aus - ohne das Token kommt niemand an die Statistikdaten:
 
@@ -239,6 +243,8 @@ die `getLeagues` liefert - z.B. `LEC`, `LCS`, `LCK`, `LPL`, `MSI`, `Worlds`,
 - **Die Sperre hängt am Spielplan.** Verschiebt Riot ein Spiel kurzfristig,
   greift die neue Sperre erst nach dem nächsten Sammellauf (maximal drei
   Stunden später).
-- **Passwörter** liegen als PBKDF2-Hash (120.000 Runden, eigenes Salt) in der
-  Datenbank. Das ist für eine Freundesrunde solide, aber es gibt bewusst keine
-  Passwort-vergessen-Funktion - dafür bräuchte es E-Mail-Versand.
+- **Passwörter** liegen als PBKDF2-Hash (100.000 Runden, eigenes Salt) in der
+  Datenbank. Mehr lässt die Workers-Runtime nicht zu: oberhalb von 100.000
+  verweigert sie die Berechnung. Für eine Freundesrunde ist das solide, solange
+  die Passwörter selbst etwas taugen. Eine Passwort-vergessen-Funktion gibt es
+  bewusst nicht - dafür bräuchte es E-Mail-Versand.

@@ -1,10 +1,10 @@
 /**
  * Konten und Anmeldung.
  *
- * Passwörter: PBKDF2-HMAC-SHA256 mit 120.000 Runden und eigenem Salt je Konto.
- * Das ist das Beste, was die Web-Crypto-API eines Workers ohne Fremdcode
- * hergibt (bcrypt/argon2 gibt es dort nicht) und für eine Freundesrunde
- * deutlich mehr als ausreichend.
+ * Passwörter: PBKDF2-HMAC-SHA256 mit 100.000 Runden und eigenem Salt je Konto -
+ * das Maximum, das die Workers-Runtime zulässt. Mehr geht nicht (sie lehnt es
+ * ab), bcrypt/argon2 gibt es dort nicht. Für eine Freundesrunde reicht das,
+ * solange die Passwörter selbst etwas taugen.
  *
  * Sitzungen: zufälliges Token in der Datenbank, im Browser nur als
  * HttpOnly-Cookie. Damit kann kein Skript im Browser das Token auslesen, und
@@ -14,7 +14,12 @@
 
 import { fail, json, newId, nowSec } from "./util.js";
 
-const PBKDF2_ROUNDS = 120000;
+// Die Workers-Runtime lehnt PBKDF2 oberhalb von 100.000 Runden rundweg ab
+// ("iteration counts above 100000 are not supported"). Lokal setzt workerd das
+// nicht durch - der Fehler taucht erst im echten Deploy auf. Deshalb steht die
+// Grenze hier als Konstante und wird unten hart geklemmt.
+const PBKDF2_MAX = 100000;
+const PBKDF2_DEFAULT = 100000;
 const COOKIE = "fl_session";
 const MIN_PASSWORD = 8;
 const MAX_PASSWORD = 200;
@@ -29,11 +34,22 @@ function hexToBytes(hex) {
   return out;
 }
 
-async function derive(password, saltHex) {
+/**
+ * Wie viele Runden gerechnet werden. Ueber PBKDF2_ROUNDS einstellbar, falls
+ * das CPU-Budget des Tarifs enger ist als die 100.000 - aber nie darueber,
+ * sonst verweigert die Runtime den Dienst.
+ */
+export function pbkdf2Rounds(env) {
+  const wanted = parseInt((env && env.PBKDF2_ROUNDS) || "", 10);
+  const value = Number.isFinite(wanted) && wanted >= 1000 ? wanted : PBKDF2_DEFAULT;
+  return Math.min(value, PBKDF2_MAX);
+}
+
+async function derive(password, saltHex, iterations) {
   const key = await crypto.subtle.importKey(
     "raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveBits"]);
   const bits = await crypto.subtle.deriveBits(
-    { name: "PBKDF2", salt: hexToBytes(saltHex), iterations: PBKDF2_ROUNDS, hash: "SHA-256" },
+    { name: "PBKDF2", salt: hexToBytes(saltHex), iterations, hash: "SHA-256" },
     key, 256);
   return bytesToHex(new Uint8Array(bits));
 }
@@ -139,11 +155,14 @@ export async function handleRegister(request, env) {
   if (existing) return fail(409, "Diesen Namen gibt es schon");
 
   const salt = newId(16);
-  const hash = await derive(password, salt);
+  const rounds = pbkdf2Rounds(env);
+  const hash = await derive(password, salt, rounds);
   const id = newId(12);
+  // Die Rundenzahl wandert mit in die Zeile: wird sie spaeter geaendert,
+  // lassen sich bestehende Konten trotzdem weiter anmelden.
   await env.DB.prepare(
-    "INSERT INTO users (id, name, name_key, pw_hash, pw_salt, created_at) VALUES (?, ?, ?, ?, ?, ?)"
-  ).bind(id, name, nameKey(name), hash, salt, nowSec()).run();
+    "INSERT INTO users (id, name, name_key, pw_hash, pw_salt, pw_rounds, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
+  ).bind(id, name, nameKey(name), hash, salt, rounds, nowSec()).run();
 
   const days = sessionDays(env);
   const token = await startSession(env, id, days);
@@ -163,13 +182,15 @@ export async function handleLogin(request, env) {
   const password = typeof body.password === "string" ? body.password : "";
 
   const user = await env.DB.prepare(
-    "SELECT id, name, pw_hash, pw_salt FROM users WHERE name_key = ?"
+    "SELECT id, name, pw_hash, pw_salt, pw_rounds FROM users WHERE name_key = ?"
   ).bind(nameKey(name)).first();
 
   // Auch ohne Treffer einmal rechnen: sonst verrät die Antwortzeit, welche
-  // Namen es gibt.
+  // Namen es gibt. Die Runden kommen aus der Zeile, damit ein spaeter
+  // geaenderter Standard alte Konten nicht aussperrt.
   const salt = user ? user.pw_salt : "00000000000000000000000000000000";
-  const hash = await derive(password, salt);
+  const rounds = user && user.pw_rounds ? user.pw_rounds : pbkdf2Rounds(env);
+  const hash = await derive(password, salt, rounds);
   if (!user || !sameSecret(hash, user.pw_hash)) {
     return fail(401, "Name oder Passwort stimmt nicht");
   }

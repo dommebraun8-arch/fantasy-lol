@@ -28,8 +28,8 @@ console.log("→ Datenbank zuruecksetzen");
 const stateDir = join(root, ".wrangler", "state");
 if (existsSync(stateDir)) rmSync(stateDir, { recursive: true, force: true });
 mkdirSync(stateDir, { recursive: true });
-if (!run("npx", ["wrangler", "d1", "execute", "fantasy-lol", "--local",
-  "--file=migrations/0001_init.sql"], { stdio: "ignore" })) {
+if (!run("npx", ["wrangler", "d1", "migrations", "apply", "fantasy-lol", "--local"],
+  { stdio: "ignore" })) {
   console.error("Migration fehlgeschlagen");
   process.exit(1);
 }
@@ -81,6 +81,7 @@ if (!(await waitForServer())) {
 }
 
 const suites = [
+  ["Einheitstests", "node", ["test/unit.test.mjs"]],
   ["API", "node", ["test/api.test.mjs"]],
   ["Oberflaeche", "node", ["test/ui.test.mjs"]],
   ["Sammler", "python3", ["test/collector_test.py"]],

@@ -55,6 +55,9 @@ ROLES = collect.ROLES
 ROUND_KEY, ROUND_START, ROUND_END = collect.round_bounds(NOW)
 PAST = NOW - timedelta(days=1)
 SOON = ROUND_END - timedelta(hours=1)
+# Eine Woche zurueck, damit dieses Match keine Sperre in der laufenden Runde
+# ausloest: es prueft nur, dass ein Bo1 ohne Formatangabe gewertet wird.
+LAST_WEEK = NOW - timedelta(days=8)
 
 
 def team_entry(tid, code, wins, outcome):
@@ -77,11 +80,22 @@ EVENTS = [
      "match": {"id": "m-soon", "strategy": {"type": "bestOf", "count": 3}, "games": [],
                "teams": [team_entry("t-gamma", "GAM", 0, None),
                          team_entry("t-beta", "BET", 0, None)]}},
+    # Bo1 ohne "outcome" und ohne strategy.count - genau die Form, an der der
+    # erste Produktivlauf jedes einzelne Match verworfen hat.
+    {"startTime": collect.iso(LAST_WEEK), "state": "completed",
+     "blockName": "Woche 0", "league": {"name": "LEC"},
+     "match": {"id": "m-bo1", "strategy": {},
+               "games": [{"id": "g-3", "number": 1, "state": "completed"}],
+               "teams": [{"id": "t-gamma", "name": "GAM Esports", "code": "GAM",
+                          "result": {"gameWins": 1}},
+                         {"id": "t-beta", "name": "BET Esports", "code": "BET",
+                          "result": {"gameWins": 0}}]}},
 ]
 
 STATS = {
     "g-1": [("t-alpha", 4, 1, 6, 280), ("t-beta", 1, 4, 2, 240)],
     "g-2": [("t-alpha", 6, 0, 8, 310), ("t-beta", 2, 5, 3, 250)],
+    "g-3": [("t-gamma", 3, 2, 5, 260), ("t-beta", 2, 3, 4, 250)],
 }
 
 
@@ -139,7 +153,17 @@ check("Sammler meldet Erfolg", code == 0, f"exit {code}")
 with open(STATE, encoding="utf-8") as f:
     state = json.load(f)
 check("Arbeitsstand enthaelt alle Spieler", len(state["players"]) == 15, len(state["players"]))
-check("Beide Spiele verarbeitet", sorted(state["processed"]) == ["g-1", "g-2"], state["processed"])
+check("Alle Spiele verarbeitet", sorted(state["processed"]) == ["g-1", "g-2", "g-3"], state["processed"])
+# Bo1 ohne Formatangabe: frueher wurde so ein Match komplett verworfen.
+bo1_round = collect.round_bounds(LAST_WEEK)[0]
+check("Bo1 ohne Formatangabe wird gewertet",
+      "t-gamma-top" in state["rounds"].get(bo1_round, {}).get("p", {}),
+      list(state["rounds"].get(bo1_round, {}).get("p", {}))[:3])
+check("Sieger des Bo1 bekommt den Serien-Bonus",
+      any(l.get("wb") and l["p"].startswith("t-gamma") for l in state["lines"] if l["g"] == "g-3"),
+      [l for l in state["lines"] if l["g"] == "g-3"][:2])
+check("Verlierer des Bo1 bekommt ihn nicht",
+      not any(l.get("wb") for l in state["lines"] if l["g"] == "g-3" and l["p"].startswith("t-beta")))
 check("Anpfiffe fuer die Sperren gesammelt",
       len(state["fixtures"].get(ROUND_KEY, {})) == 3, state["fixtures"])
 check("Frueheste Partie je Team zaehlt",
@@ -205,7 +229,7 @@ try:
     count = payload[0]["results"][0]["n"]
 except Exception as e:
     count = f"nicht lesbar ({e}): {out.stdout[-200:]}"
-check("Alle Spielzeilen stehen in der Datenbank", count == 20, count)
+check("Alle Spielzeilen stehen in der Datenbank", count == 30, count)
 
 print("\n== Zweiter Lauf aendert nichts ==")
 before = json.load(open(STATE, encoding="utf-8"))["rounds"][round_key]["p"]["t-alpha-top"]

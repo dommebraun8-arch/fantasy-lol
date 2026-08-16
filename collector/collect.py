@@ -103,6 +103,9 @@ ROUND_RETENTION_DAYS = 730
 PROCESSED_RETENTION = 6000
 
 MAX_NEW_GAMES = int(os.environ.get("FANTASY_MAX_GAMES", "250"))
+# Wie oft je Lauf getEventDetails nachgeschlagen werden darf, wenn im
+# Spielplan kein Ergebnis steht. Begrenzt, damit ein Lauf nicht ewig dauert.
+MAX_RESULT_LOOKUPS = int(os.environ.get("FANTASY_MAX_LOOKUPS", "80"))
 REBUILD = os.environ.get("FANTASY_REBUILD", "").lower() in ("1", "true", "yes")
 
 SESSION = requests.Session()
@@ -300,25 +303,64 @@ def collect_matches():
     return sorted(by_id.values(), key=lambda m: m["start"], reverse=True)
 
 
-def series_winner(match):
-    """Team-ID des Serien-Siegers, oder None wenn der Endstand nicht
-    plausibel ist (Riot meldet manchmal zu früh "completed")."""
-    teams = match["teams"]
-    if len(teams) < 2:
+def series_winner(teams, strategy):
+    """Team-ID des Serien-Siegers, oder None wenn der Endstand nichts hergibt.
+
+    Riot meldet den Sieger direkt über `result.outcome` - das ist die
+    verlässliche Quelle und wird zuerst genommen. Nur wenn die fehlt, wird der
+    Spielstand herangezogen. Dabei darf das Format *nicht* geraten werden: ein
+    angenommenes Bo3 verwirft jede gewonnene Bo1-Partie (1:0 < 2), und genau
+    daran sind beim ersten Produktivlauf alle 225 Matches gescheitert.
+    """
+    if not teams or len(teams) < 2:
         return None
+
+    winners = [t.get("id") for t in teams
+               if (t.get("result") or {}).get("outcome") == "win" and t.get("id")]
+    if len(winners) == 1:
+        return winners[0]
+
     wins = []
     for t in teams:
-        result = t.get("result") or {}
-        w = result.get("gameWins")
+        w = (t.get("result") or {}).get("gameWins")
         if not isinstance(w, int):
             return None
-        wins.append((t.get("id"), w, result.get("outcome")))
-    count = match["strategy"].get("count") or 3
-    majority = count // 2 + 1
-    best = max(wins, key=lambda x: x[1])
-    if best[1] < majority:
-        return None
-    return best[0]
+        wins.append((t.get("id"), w))
+
+    ranked = sorted(wins, key=lambda x: x[1], reverse=True)
+    if ranked[0][1] == ranked[1][1]:
+        return None  # Gleichstand ist kein Endstand
+
+    count = (strategy or {}).get("count")
+    if isinstance(count, int) and count >= 1:
+        # Bekanntes Format: erst die nötige Mehrheit macht den Sieger. Schützt
+        # davor, dass ein zu früh als "completed" gemeldeter Zwischenstand
+        # (etwa 0:1 in einem Bo3) dem falschen Team den Bonus gibt.
+        if ranked[0][1] < count // 2 + 1:
+            return None
+    return ranked[0][0]
+
+
+def match_result(match, allow_lookup):
+    """Sieger eines Matches, notfalls über getEventDetails nachgeschlagen.
+
+    Der Spielplan liefert nicht immer ein `result` mit; die Detailabfrage
+    schon. Sie kostet aber einen Aufruf je Match, deshalb nur begrenzt oft.
+    """
+    winner = series_winner(match["teams"], match["strategy"])
+    if winner or not allow_lookup:
+        return winner, False
+    detail = api("getEventDetails", id=match["id"])
+    event = (detail or {}).get("data", {}).get("event") or {}
+    detail_match = event.get("match") or {}
+    teams = detail_match.get("teams") or []
+    if teams:
+        match["teams"] = teams
+    if detail_match.get("games"):
+        match["games"] = detail_match["games"]
+    if detail_match.get("strategy"):
+        match["strategy"] = detail_match["strategy"]
+    return series_winner(match["teams"], match["strategy"]), True
 
 
 def match_games(match):
@@ -713,6 +755,8 @@ def main(dry_run=False):
     skipped_score = 0
     retry_later = 0
     given_up = 0
+    lookups = 0
+    skipped_example = None
 
     for match in matches:
         if new_games >= MAX_NEW_GAMES:
@@ -720,9 +764,20 @@ def main(dry_run=False):
         if match["id"] in done_matches:
             continue
 
-        winner = series_winner(match)
+        winner, used_lookup = match_result(match, lookups < MAX_RESULT_LOOKUPS)
+        if used_lookup:
+            lookups += 1
         if winner is None:
             skipped_score += 1
+            # Ein einzelnes Beispiel mitschreiben: bleibt die Zahl hoch, steht
+            # im Log, woran es liegt, statt nur dass es klemmt.
+            if skipped_example is None:
+                skipped_example = {
+                    "match": match["id"],
+                    "strategy": match["strategy"],
+                    "teams": [{"id": t.get("id"), "result": t.get("result")}
+                              for t in match["teams"]],
+                }
             continue
 
         games = match_games(match)
@@ -802,6 +857,9 @@ def main(dry_run=False):
     print(f"  {new_games} neue Spiele verarbeitet")
     if skipped_score:
         print(f"  {skipped_score} Matches ohne plausiblen Endstand übersprungen")
+        print(f"    Beispiel: {json.dumps(skipped_example, ensure_ascii=False)[:400]}")
+    if lookups:
+        print(f"  {lookups} Ergebnisse über getEventDetails nachgeschlagen")
     if retry_later:
         print(f"  {retry_later} Matches ohne vollständige Livestats - nächster Lauf versucht es erneut")
     if given_up:

@@ -38,8 +38,10 @@ Fremde Kader sind verdeckt, bis der eigene vollständig steht - sonst schreibt
 man einfach ab. Die Punktzahl der anderen sieht man trotzdem; die verrät keine
 Aufstellung und macht den Wettkampf erst spannend.
 
-Der eigene Kader steht als Karte da, die Plätze diagonal wie die Lanes auf
-Summoner's Rift - am Telefon als 3×3-Raster, am Schreibtisch als eine Reihe.
+Der eigene Kader steht auf einer Karte, die den Blick auf Summoner's Rift
+zitiert: Nebel und Fels am Rand, der Fluss diagonal hindurch, der rote Nexus
+unten links und der blaue oben rechts. Die Plätze liegen darauf wie die Lanes
+- am Telefon als 3×3-Raster, am Schreibtisch als eine Reihe mit Versatz.
 Im *Markt* liegt daneben eine sortierbare Tabelle mit Preis, Saisonpunkten,
 Schnitt und der Spalte **Gewählt**: wie viele in deiner Liga diesen Spieler
 schon haben. Die ist der interessanteste Wert der Seite - sie zeigt, wo alle
@@ -190,6 +192,14 @@ public/            Frontend: eine HTML-Datei, ein Stylesheet, ein Skript
 migrations/        Datenbankschema
 collector/         Python-Sammler + sein Arbeitsstand (state.json)
 ```
+
+**Die Oberfläche teilt sich die Gestaltungssprache mit lolkleena.** Farben,
+Materialstärken, Schatten und die Federkurven in `public/style.css` sind
+dieselben Werte wie dort - beide Seiten sollen sich wie ein Haus anfühlen.
+Grundlage ist `apple-design`: Flächen sind Material mit Dicke statt Rechtecke
+mit Rand, Bewegung kommt aus ausgerechneten Federn statt geratenen Kurven, und
+Laufweite und Zeilenhöhe gehören zur Schriftgröße. Am Telefon steht die
+Navigation unten am Daumen, ab 760px als Leiste links wie auf lolkleena.
 
 **Alles, was über Punkte entscheidet, rechnet der Server.** Der Client schickt
 „setze Mid auf Spieler X" - Preis, Budget, Sperre und Wertung bestimmt der

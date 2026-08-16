@@ -37,6 +37,8 @@ const state = {
 const app = document.getElementById("app");
 const tabsEl = document.getElementById("tabs");
 const whoEl = document.getElementById("who");
+const railEl = document.getElementById("rail");
+const meEl = document.getElementById("me");
 
 // ---------------------------------------------------------------- Helfer
 
@@ -128,6 +130,18 @@ async function api(path, options = {}) {
   return { status: res.status, ok: res.ok, data };
 }
 
+/**
+ * Wer angemeldet ist, steht am Telefon oben in der Kopfzeile und am
+ * Schreibtisch als Kreis unten in der Leiste - dort passt nur der
+ * Anfangsbuchstabe hin.
+ */
+function setWho() {
+  const name = state.user ? state.user.name : "";
+  whoEl.textContent = name;
+  meEl.textContent = name ? name.slice(0, 1).toUpperCase() : "";
+  meEl.title = name;
+}
+
 function setMessage(kind, text) {
   state.message = text ? { kind, text } : null;
 }
@@ -140,12 +154,12 @@ function messageHtml() {
 // ---------------------------------------------------------------- Anmeldung
 
 function renderAuth() {
-  tabsEl.hidden = true;
-  whoEl.textContent = "";
+  tabsEl.hidden = true; railEl.hidden = true;
+  setWho();
   const login = state.authMode === "login";
   app.innerHTML = `
     <div class="card">
-      <h2>${login ? "Anmelden" : "Konto anlegen"}</h2>
+      <h2 class="hd">${login ? "Anmelden" : "Konto anlegen"}</h2>
       <p class="sub">Kader aus echten Profispielern. Punkte gibt es für das,
         was deine Spieler in LEC, LCS, LCK und LPL wirklich abliefern.</p>
       ${messageHtml()}
@@ -192,7 +206,7 @@ function renderAuth() {
 // ---------------------------------------------------------------- Lobby
 
 function renderLobby() {
-  tabsEl.hidden = true;
+  tabsEl.hidden = true; railEl.hidden = true;
   const leagues = state.leagues || [];
   app.innerHTML = `
     ${messageHtml()}
@@ -263,7 +277,7 @@ function renderLobby() {
 // ---------------------------------------------------------------- Liga
 
 function renderTabs() {
-  tabsEl.hidden = false;
+  tabsEl.hidden = false; railEl.hidden = false;
   const items = [
     { key: "squad", label: "Kader", ic: "★" },
     { key: "market", label: "Markt", ic: "☰" },
@@ -292,7 +306,7 @@ function leagueHeadHtml() {
     <div class="card">
       <div class="row">
         <div>
-          <h2>${esc(l.name)}</h2>
+          <h2 class="hd">${esc(l.name)}</h2>
           <p class="sub">${esc(roundLabel(r.key))}${r.end ? " · endet " + esc(whenLong(r.end)) : ""}</p>
         </div>
         <div class="spacer"></div>
@@ -371,7 +385,7 @@ function squadPanelHtml() {
   return `
     <div class="card">
       <div class="row">
-        <h2>Dein Kader</h2>
+        <h2 class="hd">Dein Kader</h2>
         <div class="spacer"></div>
         <div class="big-pts">${num(me.total)}<span>Punkte</span></div>
       </div>
@@ -475,7 +489,7 @@ function pointsPanelHtml() {
   return `
     <div class="card">
       <div class="row">
-        <h2>Deine Punkte</h2>
+        <h2 class="hd">Deine Punkte</h2>
         <div class="spacer"></div>
         <div class="big-pts">${num(mine.total)}<span>${esc(roundLabel(league.round.key))}</span></div>
       </div>
@@ -489,12 +503,12 @@ function pointsPanelHtml() {
       ${legend}
     </div>
     ${others.map(m => m.hidden ? `
-      <div class="card"><h2>${esc(m.name)}</h2>
+      <div class="card"><h2 class="hd">${esc(m.name)}</h2>
         <p class="empty">Verdeckt, bis dein eigener Kader vollständig ist.
           Punktestand: <b>${num(m.total)}</b></p></div>`
       : `
       <div class="card">
-        <div class="row"><h2>${esc(m.name)}</h2><div class="spacer"></div>
+        <div class="row"><h2 class="hd">${esc(m.name)}</h2><div class="spacer"></div>
           <div class="big-pts">${num(m.total)}<span>Punkte</span></div></div>
         <table class="tbl"><tbody>${breakdownRowsHtml(m, false)}</tbody></table>
       </div>`).join("")}`;
@@ -646,7 +660,7 @@ function tablePanelHtml() {
 function renderLeague() {
   if (!state.league) { app.innerHTML = '<p class="loading">Lade Liga…</p>'; return; }
   renderTabs();
-  whoEl.textContent = state.user ? state.user.name : "";
+  setWho();
 
   const panels = {
     squad: squadPanelHtml,
@@ -922,9 +936,9 @@ async function loadMe() {
 }
 
 function render() {
-  whoEl.textContent = state.user ? state.user.name : "";
+  setWho();
   if (!state.user) return renderAuth();
-  if (!state.leagueId || !state.league) { tabsEl.hidden = true; return renderLobby(); }
+  if (!state.leagueId || !state.league) { tabsEl.hidden = true; railEl.hidden = true; return renderLobby(); }
   renderLeague();
 }
 

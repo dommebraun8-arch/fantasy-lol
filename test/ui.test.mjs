@@ -323,8 +323,13 @@ const sheetTop = await wide.evaluate(() =>
 check("Zugeklapptes Auswahlblatt liegt unter dem Bildrand", sheetTop >= 0, sheetTop);
 
 const wp = await browser.newPage();
+await wp.setViewportSize({ width: 1280, height: 720 });
 await wp.goto(BASE);
 await wp.waitForSelector("#auth-form");
+// Wer nicht angemeldet ist, hat nichts zu navigieren - die Leiste muss weg
+// sein, nicht nur leer. (display:flex schlaegt sonst das hidden-Attribut.)
+check("Ohne Anmeldung ist die Leiste nicht da",
+  await wp.locator("#rail:visible").count() === 0);
 await wp.screenshot({ path: SHOTS + "/7c-desktop-login.png" });
 
 console.log("\n== Fehlerfreiheit ==");

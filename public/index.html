@@ -11,16 +11,24 @@
 </head>
 <body>
 
+<!-- Am Telefon steht die Marke oben und die Navigation unten am Daumen; ab
+     760px wandert beides in die Leiste links, wie auf lolkleena. -->
 <div class="topbar">
   <div class="brand">Fantasy<span>LoL</span></div>
   <div class="who" id="who"></div>
 </div>
 
-<div class="wrap" id="app">
-  <p class="loading">Lade…</p>
-</div>
+<div class="shell">
+  <aside class="rail" id="rail">
+    <div class="mark" aria-hidden="true">FL</div>
+    <nav class="tabs" id="tabs" hidden></nav>
+    <div class="me" id="me" aria-hidden="true"></div>
+  </aside>
 
-<nav class="tabs" id="tabs" hidden></nav>
+  <main class="wrap" id="app">
+    <p class="loading">Lade…</p>
+  </main>
+</div>
 
 <div class="sheet-back" id="sheet-back"></div>
 <div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-label="Spieler wählen">

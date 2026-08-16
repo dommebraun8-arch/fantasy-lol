@@ -113,17 +113,30 @@ def fake_get(url, params=None, headers=None, tries=3):
         gid = url.rsplit("/", 1)[-1]
         if gid not in STATS:
             return None
-        meta, frames = {}, {"blueTeam": {"participants": []}, "redTeam": {"participants": []}}
+        meta = {}
+        frames = {"blueTeam": {"participants": []}, "redTeam": {"participants": []}}
+        empty = {"blueTeam": {"participants": []}, "redTeam": {"participants": []}}
         for side, (tid, k, d, a, cs) in zip(("blue", "red"), STATS[gid]):
-            pmeta, parts = [], []
+            pmeta, parts, zeros = [], [], []
             for i, role in enumerate(ROLES, start=1):
                 pmeta.append({"participantId": i, "esportsPlayerId": f"{tid}-{role}",
                               "summonerName": f"{tid}-{role}", "championId": "Ahri", "role": role})
                 parts.append({"participantId": i, "kills": k, "deaths": d, "assists": a,
-                              "creepScore": cs})
+                              "creepScore": cs, "totalGold": 12000, "level": 16})
+                zeros.append({"participantId": i, "kills": 0, "deaths": 0, "assists": 0,
+                              "creepScore": 0, "totalGold": 0, "level": 0})
             meta[f"{side}TeamMetadata"] = {"esportsTeamId": tid, "participantMetadata": pmeta}
             frames[f"{side}Team"] = {"participants": parts}
-        return {"gameMetadata": meta, "frames": [dict(frames, gameState="finished")]}
+            empty[f"{side}Team"] = {"participants": zeros}
+        # So kommt der Feed wirklich: hinter dem Schlussstand haengen noch
+        # Frames, in denen alles auf 0 steht. Genau die hat der Sammler frueher
+        # gewertet - jede Spielzeile stand auf 0/0/0 mit 0 CS und bekam den
+        # Bonus fuer "kein Tod" obendrauf.
+        return {"gameMetadata": meta, "frames": [
+            dict(frames, gameState="in_game", rfc460Timestamp="2026-08-15T18:30:00Z"),
+            dict(empty, gameState="finished", rfc460Timestamp="2026-08-15T18:30:10Z"),
+            dict(empty, gameState="finished", rfc460Timestamp="2026-08-15T18:30:20Z"),
+        ]}
 
     if url.endswith("/getLeagues"):
         return {"data": {"leagues": [{"id": LEAGUE_ID, "name": "LEC"}]}}
@@ -191,6 +204,50 @@ round_key = collect.round_bounds(PAST)[0]
 alpha = state["rounds"][round_key]["p"]["t-alpha-top"]
 check("Rundensumme stimmt", abs(alpha[0] - (22.1 + 35.2)) < 0.01, alpha)
 check("Zwei Spiele gezaehlt", alpha[1] == 2, alpha)
+
+# Die eigentliche Zusicherung gegen den Nullstand: die Werte in den Zeilen
+# muessen die aus dem Spiel sein, nicht die aus den Frames danach.
+g1 = next(l for l in state["lines"] if l["g"] == "g-1" and l["p"] == "t-alpha-top")
+check("Spielwerte kommen aus dem Schlussstand, nicht aus den Frames danach",
+      (g1["k"], g1["d"], g1["a"], g1["cs"]) == (4, 1, 6, 280), g1)
+check("Keine einzige Zeile steht auf 0/0/0 mit 0 CS",
+      not [l for l in state["lines"] if not (l["k"] or l["d"] or l["a"] or l["cs"])],
+      [l for l in state["lines"] if not (l["k"] or l["d"] or l["a"] or l["cs"])][:2])
+
+print("\n== Frames auswaehlen ==")
+real = {"blueTeam": {"participants": [{"kills": 3, "deaths": 1, "assists": 2,
+                                       "creepScore": 200, "totalGold": 9000}]},
+        "redTeam": {"participants": []}}
+null = {"blueTeam": {"participants": [{"kills": 0, "deaths": 0, "assists": 0,
+                                       "creepScore": 0, "totalGold": 0}]},
+        "redTeam": {"participants": []}}
+check("Leerer Frame zaehlt als leer", collect.frame_activity(null) == 0)
+check("Frame mit Werten zaehlt als voll", collect.frame_activity(real) > 0)
+check("Nachlaufende Leerframes werden uebersprungen",
+      collect.last_real_frame([real, null, null]) is real)
+check("Nur Leerframes ergeben keinen Frame",
+      collect.last_real_frame([null, null]) is None)
+check("Ohne Frames auch keiner", collect.last_real_frame([]) is None)
+# Startgold zaehlt mit: in der ersten Minute gibt es noch keine Kills und
+# keinen Creep Score, der Frame ist aber trotzdem echt.
+kickoff = {"blueTeam": {"participants": [{"kills": 0, "deaths": 0, "assists": 0,
+                                          "creepScore": 0, "totalGold": 500, "level": 1}]},
+           "redTeam": {"participants": []}}
+check("Anpfiff-Frame gilt als echt", collect.last_real_frame([kickoff]) is kickoff)
+
+# Ein Spiel, dessen Fenster nur Nullen enthaelt, darf nicht gespeichert
+# werden - lieber beim naechsten Lauf nochmal fragen als Nullen in die App.
+_real_get = collect._get
+collect._get = lambda url, params=None, headers=None, tries=3: (
+    {"gameMetadata": {"blueTeamMetadata": {"esportsTeamId": "t-alpha", "participantMetadata": [
+        {"participantId": 1, "esportsPlayerId": "t-alpha-top", "championId": "Ahri", "role": "top"}]}},
+     "frames": [{"blueTeam": {"participants": [
+         {"participantId": 1, "kills": 0, "deaths": 0, "assists": 0, "creepScore": 0}]},
+         "redTeam": {"participants": []}, "rfc460Timestamp": "2026-08-15T18:30:00Z"}]}
+    if "/livestats/" in url else _real_get(url, params, headers, tries))
+check("Ein Spiel ganz ohne Werte wird nicht gespeichert",
+      collect.read_game("g-null", {}, {}) is None)
+collect._get = _real_get
 
 # ---------------------------------------------------------------- Ankunft pruefen
 

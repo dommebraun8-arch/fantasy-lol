@@ -76,6 +76,13 @@ SCORING = {
 }
 SCORING_VERSION = 1
 
+# Hoch, wenn sich ändert *wie* die Werte gelesen werden - nicht wie sie
+# gewichtet werden. Wirkt genauso: der nächste Lauf baut die Saison neu auf,
+# statt falsche und richtige Zahlen zu mischen.
+#   1 -> 2: frames[-1] war nach Spielende ein Nullstand, also stand jede
+#           Spielzeile auf 0/0/0 mit 0 CS - plus Bonus für "kein Tod".
+DATA_VERSION = 2
+
 # Budget für den Kader (5 Spieler). Preise liegen zwischen 4.0 und 12.0,
 # ein Kader kostet also mindestens 20.0 - 35.0 lässt genau einen Topspieler
 # zu, wenn der Rest günstig ist.
@@ -113,6 +120,13 @@ MAX_RESULT_LOOKUPS = int(os.environ.get("FANTASY_MAX_LOOKUPS", "250"))
 # eingegrenzt wird. Darunter (Saisonpause, API-Ausfall) bleibt er ungefiltert -
 # lieber zu viele Spieler zur Wahl als gar keine.
 MIN_ACTIVE_TEAMS = int(os.environ.get("FANTASY_MIN_TEAMS", "8"))
+# Wie weit sich read_game() am Spiel entlanghangeln darf, wenn das erste
+# Fenster nur Leerframes enthält. Zehn Minuten je Schritt, acht Schritte
+# decken jedes Profispiel ab.
+LIVESTATS_MAX_STEPS = 8
+# ... und wie viele solcher Suchanfragen ein ganzer Lauf ausgeben darf. Ohne
+# Deckel könnten 250 Spiele mal 16 Fenster den Lauf ins Zeitlimit treiben.
+LIVESTATS_WALK_BUDGET = int(os.environ.get("FANTASY_MAX_WALKS", "40"))
 REBUILD = os.environ.get("FANTASY_REBUILD", "").lower() in ("1", "true", "yes")
 
 SESSION = requests.Session()
@@ -155,11 +169,25 @@ def api(path, **params):
     return _get(f"{BASE}/{path}", params=params, headers=HEADERS)
 
 
-def livestats_window(game_id):
-    """Letztes Fenster eines Spiels. Ohne startingTime liefert der Feed das
-    aktuellste - bei einem beendeten Spiel also den Schlussstand."""
+def livestats_window(game_id, starting_time=None):
+    """Ein Fenster aus dem Livestats-Feed.
+
+    Ohne startingTime liefert der Feed das aktuellste Fenster. Achtung: das
+    ist bei einem beendeten Spiel *nicht* verlässlich der Schlussstand - nach
+    dem Spielende schickt der Feed weiter Frames, in denen die
+    Teilnehmerwerte auf 0 stehen. Wer blind den letzten Frame nimmt, schreibt
+    lauter Nullen in die Datenbank. Genau das ist passiert.
+
+    startingTime muss auf zehn Sekunden aufgehen, sonst antwortet die API mit
+    400.
+    """
     time.sleep(0.25)
-    return _get(f"{LIVESTATS}/{game_id}")
+    params = None
+    if starting_time is not None:
+        aligned = starting_time.replace(microsecond=0)
+        aligned -= timedelta(seconds=aligned.second % 10)
+        params = {"startingTime": iso(aligned)}
+    return _get(f"{LIVESTATS}/{game_id}", params=params)
 
 
 # ---------------------------------------------------------------- Zeit/Runden
@@ -428,11 +456,47 @@ def score_line(k, d, a, cs):
     return round(pts, 2)
 
 
-def read_game(game_id, roster_players, roster_teams):
+def frame_activity(frame):
+    """Wie viel in einem Frame überhaupt passiert ist.
+
+    Dient nur der Unterscheidung "echter Spielstand" gegen "leerer Frame".
+    Gold zählt mit, weil es als Einziges auch in der ersten Spielminute schon
+    ungleich null ist - ein Frame vom Anpfiff hat 0 Kills und 0 CS, aber
+    Startgold.
+    """
+    total = 0
+    for side in ("blue", "red"):
+        for p in (frame.get(f"{side}Team") or {}).get("participants") or []:
+            for key in ("kills", "deaths", "assists", "creepScore", "totalGold", "level"):
+                try:
+                    total += int(p.get(key) or 0)
+                except (TypeError, ValueError):
+                    pass
+    return total
+
+
+def last_real_frame(frames):
+    """Der letzte Frame, in dem tatsächlich Werte stehen.
+
+    Nach dem Spielende hängt der Feed Frames an, in denen alle
+    Teilnehmerwerte auf 0 stehen. frames[-1] liefert deshalb einen
+    Nullspielstand - und weil "0 Tode" als makelloses Spiel gilt, bekam jeder
+    Spieler dafür auch noch den Bonus. Rückwärts suchen kostet nichts und ist
+    gegen beide Fälle robust: nachlaufende Leerframes und ein Feed, der schon
+    beim Anpfiff abbricht.
+    """
+    for frame in reversed(frames):
+        if frame_activity(frame) > 0:
+            return frame
+    return None
+
+
+def read_game(game_id, roster_players, roster_teams, diag=None):
     """Eine Spielzeile je Teilnehmer aus dem Livestats-Fenster.
 
-    Gibt None zurück, wenn der Feed für das Spiel (noch) nichts hat - dann
-    bleibt das Spiel unverarbeitet und der nächste Lauf versucht es erneut.
+    Gibt None zurück, wenn der Feed für das Spiel (noch) nichts Brauchbares
+    hat - dann bleibt das Spiel unverarbeitet und der nächste Lauf versucht es
+    erneut. Lieber dreimal vergeblich fragen als einmal Nullen speichern.
     """
     data = livestats_window(game_id)
     if not data:
@@ -440,7 +504,39 @@ def read_game(game_id, roster_players, roster_teams):
     frames = data.get("frames") or []
     if not frames:
         return None
-    frame = frames[-1]
+    frame = last_real_frame(frames)
+
+    # Enthält das Fenster nur Leerframes, liegt es neben dem Spiel. Dann am
+    # Zeitstempel des Fensters entlanghangeln - erst vorwärts, dann rückwärts,
+    # weil nicht feststeht, auf welcher Seite des Spiels das Fenster liegt.
+    # Das kostet Anfragen, deshalb gibt es dafür ein Budget je Lauf: lieber ein
+    # paar Spiele im nächsten Durchgang als ein Lauf, der ins Zeitlimit läuft.
+    walked = 0
+    if frame is None:
+        anchor = parse_iso(frames[0].get("rfc460Timestamp"))
+        budget = diag if diag is not None else {}
+        offsets = ([timedelta(minutes=10 * s) for s in range(1, LIVESTATS_MAX_STEPS + 1)]
+                   + [timedelta(minutes=-10 * s) for s in range(1, LIVESTATS_MAX_STEPS + 1)])
+        for offset in offsets:
+            if anchor is None or budget.get("walks", 0) >= LIVESTATS_WALK_BUDGET:
+                break
+            budget["walks"] = budget.get("walks", 0) + 1
+            walked += 1
+            more = livestats_window(game_id, anchor + offset)
+            found = last_real_frame((more or {}).get("frames") or [])
+            if found is not None:
+                frame, data = found, more
+                break
+    if frame is None:
+        return None
+
+    if diag is not None and not diag.get("shown"):
+        diag["shown"] = True
+        idx = frames.index(frame) + 1 if frame in frames else 0
+        print(f"  Beispiel {game_id}: {len(frames)} Frames, genutzt "
+              + (f"Nr. {idx}" if idx else f"ein Nachbarfenster ({walked} gesucht)")
+              + f" (Stand {frame.get('rfc460Timestamp')},"
+                f" {frame_activity(frame)} Punkte Aktivität)")
 
     meta = data.get("gameMetadata") or {}
     lines = []
@@ -488,7 +584,15 @@ def read_game(game_id, roster_players, roster_teams):
                 "k": k, "d": d, "a": a, "cs": cs,
                 "pts": score_line(k, d, a, cs),
             })
-    return lines or None
+    if not lines:
+        return None
+    # Zehn Spieler ohne einen einzigen Wert sind kein Spiel, sondern ein
+    # kaputtes Fenster. Nicht speichern, sondern beim nächsten Lauf nochmal
+    # fragen - sonst steht in der App ein Kader voller 0/0/0 mit Bonus für
+    # "kein Tod".
+    if not any(l["k"] or l["d"] or l["a"] or l["cs"] for l in lines):
+        return None
+    return lines
 
 
 # ---------------------------------------------------------------- Speicher
@@ -496,6 +600,7 @@ def read_game(game_id, roster_players, roster_teams):
 def empty_data():
     return {
         "scoringVersion": SCORING_VERSION,
+        "dataVersion": DATA_VERSION,
         "players": {},
         "rounds": {},
         "prices": {},
@@ -522,6 +627,9 @@ def load_data():
         return empty_data()
     if data.get("scoringVersion") != SCORING_VERSION:
         print("Punktesystem hat sich geändert - rechne die Saison neu durch")
+        return empty_data()
+    if data.get("dataVersion") != DATA_VERSION:
+        print("Spielwerte werden anders gelesen - hole die Saison neu")
         return empty_data()
     base = empty_data()
     base.update({k: data.get(k, base[k]) for k in base})
@@ -799,6 +907,10 @@ def main(dry_run=False):
     given_up = 0
     lookups = 0
     skipped_example = None
+    # Einmal je Lauf ausgeben, welcher Frame gewertet wurde. Dass die
+    # Spielwerte alle auf 0 standen, ist genau deshalb wochenlang nicht
+    # aufgefallen: im Log stand nur, wie viele Spiele verarbeitet wurden.
+    frame_diag = {}
 
     for match in matches:
         if new_games >= MAX_NEW_GAMES:
@@ -840,7 +952,7 @@ def main(dry_run=False):
         match_lines = []
         complete = True
         for game in games:
-            lines = read_game(game["id"], roster_players, roster_teams)
+            lines = read_game(game["id"], roster_players, roster_teams, frame_diag)
             if lines is None:
                 complete = False
                 break
@@ -907,6 +1019,15 @@ def main(dry_run=False):
         print(f"  {retry_later} Matches ohne vollständige Livestats - nächster Lauf versucht es erneut")
     if given_up:
         print(f"  {given_up} Matches endgültig ohne Livestats abgehakt")
+
+    # Der Schnitt über alle gespeicherten Zeilen. Steht hier 0/0/0, ist der
+    # Feed kaputt gelesen worden - dann sieht man es im Log und nicht erst in
+    # der App.
+    if data["lines"]:
+        n = len(data["lines"])
+        avg = lambda key: sum(l.get(key) or 0 for l in data["lines"]) / n
+        print(f"  Schnitt je Spielzeile: {avg('k'):.1f}/{avg('d'):.1f}/{avg('a'):.1f}"
+              f", {avg('cs'):.0f} CS, {avg('pts'):.1f} Punkte  ({n} Zeilen)")
 
     prune(data, now)
     season_totals(data, now)

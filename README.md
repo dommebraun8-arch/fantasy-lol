@@ -225,8 +225,16 @@ einzelner Platz und der Rest wäre weg.
   angesetzt sind. Ihre Punkte behalten alle anderen, sie tauchen nur nicht mehr
   im Markt auf.
 - **Spielwerte:** der Livestats-Feed
-  (`feed.lolesports.com/livestats/v1/window/<gameId>`), letzter Frame eines
-  beendeten Spiels.
+  (`feed.lolesports.com/livestats/v1/window/<gameId>`). Achtung, das war der
+  teuerste Irrtum bisher: **nicht der letzte Frame**, sondern der letzte Frame
+  *mit Werten*. Nach dem Spielende hängt der Feed weitere Frames an, in denen
+  alle Teilnehmerwerte auf 0 stehen. `frames[-1]` liefert deshalb einen
+  Nullspielstand - und weil „kein Tod" als makelloses Spiel gilt, bekam jeder
+  Spieler dafür auch noch +2. In der App stand danach überall `0/0/0 · 0 CS ·
+  2.0`. Enthält ein Fenster nur Leerframes, hangelt sich der Sammler in
+  Zehn-Minuten-Schritten am Zeitstempel entlang, vorwärts und rückwärts. Ergibt
+  ein Spiel am Ende überall Nullen, wird es **nicht** gespeichert - lieber im
+  nächsten Lauf nochmal fragen als Nullen in die Wertung schreiben.
 - **Welche Matches:** `getSchedule` plus `getCompletedEvents` je Turnier der
   laufenden Saison.
 - **Anpfiffe für die Sperren:** `getSchedule`, erster Anpfiff jedes Teams in
@@ -238,6 +246,17 @@ einzelner Platz und der Rest wäre weg.
 Genutzt wird dieselbe öffentliche API, die lolesports.com im Browser aufruft -
 kein Schlüssel nötig, aber auch keine Zusage von Riot, dass sie so bleibt.
 Bleibt der Sammler leer, zuerst in die Action-Logs schauen.
+
+Jeder Lauf schreibt zwei Zeilen ins Log, die genau dafür da sind, dass so ein
+Fehler nicht wieder wochenlang unbemerkt bleibt:
+
+```
+Beispiel g-1: 3 Frames, genutzt Nr. 1 (Stand 2026-08-15T18:30:00Z, 122850 Punkte Aktivität)
+Schnitt je Spielzeile: 3.0/2.5/4.7, 265 CS, 18.4 Punkte  (30 Zeilen)
+```
+
+Steht im Schnitt `0.0/0.0/0.0, 0 CS`, wird der Feed falsch gelesen. Vorher
+stand im Log nur, wie viele Spiele verarbeitet wurden - und das stimmte ja.
 
 Der Sammler arbeitet inkrementell und merkt sich verarbeitete Matches in
 `collector/state.json`. Ein Match wird immer komplett verarbeitet oder gar
@@ -253,6 +272,10 @@ durch, statt alte und neue Punkte zu mischen. Komplett neu aufbauen:
 ```bash
 FANTASY_REBUILD=1 python collector/collect.py
 ```
+
+Ändert sich dagegen, **wie** die Werte aus der API gelesen werden, gehört
+`DATA_VERSION` hoch. Wirkt genauso - der nächste Lauf holt die Saison neu -,
+sagt aber ehrlich, was der Grund war.
 
 ### Andere Ligen
 

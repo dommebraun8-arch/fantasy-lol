@@ -103,9 +103,12 @@ ROUND_RETENTION_DAYS = 730
 PROCESSED_RETENTION = 6000
 
 MAX_NEW_GAMES = int(os.environ.get("FANTASY_MAX_GAMES", "250"))
-# Wie oft je Lauf getEventDetails nachgeschlagen werden darf, wenn im
-# Spielplan kein Ergebnis steht. Begrenzt, damit ein Lauf nicht ewig dauert.
-MAX_RESULT_LOOKUPS = int(os.environ.get("FANTASY_MAX_LOOKUPS", "80"))
+# Wie oft je Lauf getEventDetails nachgeschlagen werden darf. Noetig, weil der
+# Spielplan bei vielen Matches "id": null fuer die Teams liefert - der Sieger
+# steht zwar da, laesst sich aber keinem Team zuordnen. Die Detailabfrage hat
+# die IDs. Grosszuegig bemessen, damit ein Rueckstand in einem Durchgang
+# abgearbeitet wird; verarbeitete Matches werden ohnehin nie erneut abgefragt.
+MAX_RESULT_LOOKUPS = int(os.environ.get("FANTASY_MAX_LOOKUPS", "250"))
 # Ab wie vielen Teams im Spielplan der Markt auf tatsaechlich spielende Teams
 # eingegrenzt wird. Darunter (Saisonpause, API-Ausfall) bleibt er ungefiltert -
 # lieber zu viele Spieler zur Wahl als gar keine.
@@ -779,7 +782,8 @@ def main(dry_run=False):
                 skipped_example = {
                     "match": match["id"],
                     "strategy": match["strategy"],
-                    "teams": [{"id": t.get("id"), "result": t.get("result")}
+                    "teams": [{"id": t.get("id"), "name": t.get("name"),
+                               "code": t.get("code"), "result": t.get("result")}
                               for t in match["teams"]],
                 }
             continue

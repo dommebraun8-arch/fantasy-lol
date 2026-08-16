@@ -373,7 +373,22 @@ except Exception as e:
 check("Alle Spielzeilen stehen in der Datenbank", count == 30, count)
 
 print("\n== Zweiter Lauf aendert nichts ==")
-before = json.load(open(STATE, encoding="utf-8"))["rounds"][round_key]["p"]["t-alpha-top"]
+# Der geschriebene Arbeitsstand muss beim naechsten Lauf auch angenommen
+# werden. Fehlt darin eine der beiden Versionsangaben, haelt load_data() ihn
+# fuer veraltet und baut jedes Mal neu auf - das faellt sonst nirgends auf,
+# weil das Ergebnis ja stimmt. Nur bleibt der Sammler dann fuer immer bei
+# MAX_NEW_GAMES Spielen stehen und fragt alle drei Stunden die ganze Saison
+# neu ab.
+saved = json.load(open(STATE, encoding="utf-8"))
+check("Arbeitsstand nennt beide Versionen",
+      saved.get("scoringVersion") == collect.SCORING_VERSION
+      and saved.get("dataVersion") == collect.DATA_VERSION,
+      (saved.get("scoringVersion"), saved.get("dataVersion")))
+reloaded = collect.load_data()
+check("Und wird beim naechsten Lauf wiederverwendet",
+      sorted(reloaded["processed"]) == ["g-1", "g-2", "g-3"], reloaded["processed"][:5])
+
+before = saved["rounds"][round_key]["p"]["t-alpha-top"]
 collect.main()
 after = json.load(open(STATE, encoding="utf-8"))["rounds"][round_key]["p"]["t-alpha-top"]
 check("Punkte bleiben gleich (keine Doppelzaehlung)", before == after, (before, after))

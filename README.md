@@ -237,14 +237,18 @@ einzelner Platz und der Rest wäre weg.
 
   Der Sammler sucht die Spielzeit deshalb selbst (`find_final_window`):
 
-  1. Ein Schuss vier Stunden hinter den Anpfiff - fällt der Feed dort auf den
-     letzten vorhandenen Stand zurück, ist man mit einer Anfrage fertig.
-  2. Sonst grob in Zehn-Minuten-Schritten vom angesetzten Anpfiff nach vorn,
-     bis nach einem Fenster mit Werten eines ohne kommt. Dazwischen endete das
-     Spiel. Die vier Stunden Reichweite sind nötig, weil Spiel 2 und 3 einer
-     Serie lange nach dem Anpfiff des Matches laufen.
+  1. Ein Schuss vier Stunden hinter den Anpfiff. Der Feed fällt dort auf den
+     letzten vorhandenen Stand zurück - im Produktivlauf reichte das für
+     jedes einzelne Spiel, also eine Anfrage pro Spiel.
+  2. Falls nicht: grob in Zehn-Minuten-Schritten vom angesetzten Anpfiff nach
+     vorn, bis nach einem Fenster mit Werten eines ohne kommt. Dazwischen
+     endete das Spiel. Die vier Stunden Reichweite sind nötig, weil Spiel 2
+     und 3 einer Serie lange nach dem Anpfiff des Matches laufen.
   3. Dann in diesem Zehn-Minuten-Loch halbieren, sonst friert der Stand
      Minuten vor dem Ende ein.
+
+  Schritt 2 und 3 sind das Netz, nicht der Regelweg — dass Schritt 1
+  funktioniert, ist eine Beobachtung und keine Zusage von Riot.
 
   Level zählt bei der Frage „ist das ein echter Frame?" bewusst **nicht** mit -
   sonst sieht der Platzhalter wie ein Spielstand aus. Gold schon, denn beim

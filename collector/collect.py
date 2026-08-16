@@ -501,13 +501,17 @@ def find_final_window(game_id, anchor, budget):
     startingTime liefert er einen Platzhalter, und ein Fenster ausserhalb der
     Spielzeit ist leer. Man muss also selbst finden, wann das Spiel lief:
 
-    1. Ein Schuss weit hinter das Spielende. Sollte der Feed dort auf den
-       letzten vorhandenen Stand zurückfallen, ist man mit einer Anfrage
-       fertig.
-    2. Sonst grob in Zehn-Minuten-Schritten nach vorn, bis nach einem Fenster
-       mit Werten eines ohne kommt - dazwischen endete das Spiel.
+    1. Ein Schuss weit hinter das Spielende. Der Feed fällt dort auf den
+       letzten vorhandenen Stand zurück - im Produktivlauf reichte das für
+       jedes einzelne Spiel, eine Anfrage pro Spiel.
+    2. Falls nicht: grob in Zehn-Minuten-Schritten nach vorn, bis nach einem
+       Fenster mit Werten eines ohne kommt - dazwischen endete das Spiel.
     3. Dann in diesem Zehn-Minuten-Loch halbieren, damit der Stand nicht
        Minuten vor dem Ende eingefroren wird.
+
+    Schritt 2 und 3 sind also das Netz, nicht der Regelweg. Sie bleiben
+    trotzdem drin: dass Schritt 1 funktioniert, ist eine Beobachtung, keine
+    Zusage von Riot.
 
     Gibt (Fenster, Anzahl Anfragen) zurück, oder (None, n).
     """
@@ -1123,7 +1127,11 @@ def main(dry_run=False):
 
     out = {
         "generated": iso(now),
+        # Beide Versionen müssen mit raus. Fehlt eine, hält load_data() den
+        # Arbeitsstand für veraltet und baut bei *jedem* Lauf neu auf - der
+        # Sammler käme nie über ein Fenster von MAX_NEW_GAMES hinaus.
         "scoringVersion": SCORING_VERSION,
+        "dataVersion": DATA_VERSION,
         "leagues": FANTASY_LEAGUES,
         "roles": ROLES,
         "budget": BUDGET,

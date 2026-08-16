@@ -20,14 +20,38 @@ const STATEMENTS_PER_BATCH = 20;
 // der Spaltenzahl der Tabelle.
 const MAX_BOUND_VALUES = 100;
 
-function authorized(request, env) {
+function readToken(request) {
   const header = request.headers.get("authorization") || "";
-  const token = header.startsWith("Bearer ") ? header.slice(7) : "";
+  return header.startsWith("Bearer ") ? header.slice(7) : "";
+}
+
+function authorized(request, env) {
+  const token = readToken(request);
   const expected = env.INGEST_TOKEN || "";
   if (!expected || token.length !== expected.length) return false;
   let diff = 0;
   for (let i = 0; i < token.length; i++) diff |= token.charCodeAt(i) ^ expected.charCodeAt(i);
   return diff === 0;
+}
+
+/**
+ * Warum die Anmeldung scheiterte - ohne das Geheimnis zu verraten.
+ *
+ * Bei einem 401 steht man sonst vor der Frage "welche der beiden Seiten hat
+ * den falschen Wert?" und kann nur raten. Die Länge zu nennen beantwortet den
+ * häufigsten Fall (ein mitkopiertes Leerzeichen oder Zeilenende) sofort; aus
+ * ihr lässt sich ein 64 Zeichen langes Zufallstoken nicht erschließen.
+ */
+function authHint(request, env) {
+  const token = readToken(request);
+  const expected = env.INGEST_TOKEN || "";
+  if (!expected) return "Auf dem Worker ist gar kein INGEST_TOKEN gesetzt (wrangler secret put INGEST_TOKEN)";
+  if (!token) return "Die Anfrage hat keinen Authorization-Header mitgeschickt";
+  if (token.length !== expected.length) {
+    return `Länge stimmt nicht: geschickt ${token.length} Zeichen, erwartet ${expected.length}`
+      + (token.trim().length !== token.length ? " - im geschickten Wert steckt Leerraum" : "");
+  }
+  return "Gleiche Länge, anderer Inhalt - die beiden Werte stammen aus verschiedenen Durchgängen";
 }
 
 /** Viele Zeilen in wenigen Anweisungen - eine pro Zeile wäre viel zu langsam. */
@@ -57,7 +81,7 @@ function str(v, max = 200) {
 }
 
 export async function handleIngest(request, env) {
-  if (!authorized(request, env)) return fail(401, "Nicht berechtigt");
+  if (!authorized(request, env)) return fail(401, "Nicht berechtigt", { hint: authHint(request, env) });
 
   let body;
   try {

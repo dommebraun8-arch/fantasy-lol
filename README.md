@@ -225,16 +225,34 @@ einzelner Platz und der Rest wäre weg.
   angesetzt sind. Ihre Punkte behalten alle anderen, sie tauchen nur nicht mehr
   im Markt auf.
 - **Spielwerte:** der Livestats-Feed
-  (`feed.lolesports.com/livestats/v1/window/<gameId>`). Achtung, das war der
-  teuerste Irrtum bisher: **nicht der letzte Frame**, sondern der letzte Frame
-  *mit Werten*. Nach dem Spielende hängt der Feed weitere Frames an, in denen
-  alle Teilnehmerwerte auf 0 stehen. `frames[-1]` liefert deshalb einen
-  Nullspielstand - und weil „kein Tod" als makelloses Spiel gilt, bekam jeder
-  Spieler dafür auch noch +2. In der App stand danach überall `0/0/0 · 0 CS ·
-  2.0`. Enthält ein Fenster nur Leerframes, hangelt sich der Sammler in
-  Zehn-Minuten-Schritten am Zeitstempel entlang, vorwärts und rückwärts. Ergibt
-  ein Spiel am Ende überall Nullen, wird es **nicht** gespeichert - lieber im
-  nächsten Lauf nochmal fragen als Nullen in die Wertung schreiben.
+  (`feed.lolesports.com/livestats/v1/window/<gameId>`). Der teuerste Irrtum
+  bisher, deshalb ausführlich:
+
+  **Der Feed kennt keinen „gib mir den Endstand".** Ruft man ihn ohne
+  `startingTime` auf, antwortet er für ein beendetes Spiel mit einem
+  Platzhalter: zehn Teilnehmer auf Level 1, alles andere 0. Wer den nimmt,
+  schreibt lauter Nullen in die Datenbank - und weil „kein Tod" als
+  makelloses Spiel gilt, bekommt jeder Spieler dafür auch noch +2. Genau so
+  stand in der App wochenlang überall `0/0/0 · 0 CS · 2.0`.
+
+  Der Sammler sucht die Spielzeit deshalb selbst (`find_final_window`):
+
+  1. Ein Schuss vier Stunden hinter den Anpfiff - fällt der Feed dort auf den
+     letzten vorhandenen Stand zurück, ist man mit einer Anfrage fertig.
+  2. Sonst grob in Zehn-Minuten-Schritten vom angesetzten Anpfiff nach vorn,
+     bis nach einem Fenster mit Werten eines ohne kommt. Dazwischen endete das
+     Spiel. Die vier Stunden Reichweite sind nötig, weil Spiel 2 und 3 einer
+     Serie lange nach dem Anpfiff des Matches laufen.
+  3. Dann in diesem Zehn-Minuten-Loch halbieren, sonst friert der Stand
+     Minuten vor dem Ende ein.
+
+  Level zählt bei der Frage „ist das ein echter Frame?" bewusst **nicht** mit -
+  sonst sieht der Platzhalter wie ein Spielstand aus. Gold schon, denn beim
+  Anpfiff hat jeder 500. Ergibt ein Spiel am Ende überall Nullen, wird es
+  **nicht** gespeichert; lieber im nächsten Lauf nochmal fragen. Die Suche hat
+  ein Anfragebudget je Lauf (`FANTASY_MAX_WALKS`), damit ein Neuaufbau die
+  Action nicht ins Zeitlimit treibt - was nicht mehr reinpasst, holt der
+  nächste Durchgang.
 - **Welche Matches:** `getSchedule` plus `getCompletedEvents` je Turnier der
   laufenden Saison.
 - **Anpfiffe für die Sperren:** `getSchedule`, erster Anpfiff jedes Teams in

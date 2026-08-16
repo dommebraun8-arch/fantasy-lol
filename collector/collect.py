@@ -81,7 +81,10 @@ SCORING_VERSION = 1
 # statt falsche und richtige Zahlen zu mischen.
 #   1 -> 2: frames[-1] war nach Spielende ein Nullstand, also stand jede
 #           Spielzeile auf 0/0/0 mit 0 CS - plus Bonus für "kein Tod".
-DATA_VERSION = 2
+#   2 -> 3: der Feed liefert ohne startingTime gar keinen Endstand, sondern
+#           einen Platzhalter. Die Spielzeit wird jetzt gesucht. Setzt
+#           nebenbei die Fehlzähler der 228 Matches aus Lauf 2 zurück.
+DATA_VERSION = 3
 
 # Budget für den Kader (5 Spieler). Preise liegen zwischen 4.0 und 12.0,
 # ein Kader kostet also mindestens 20.0 - 35.0 lässt genau einen Topspieler
@@ -120,13 +123,15 @@ MAX_RESULT_LOOKUPS = int(os.environ.get("FANTASY_MAX_LOOKUPS", "250"))
 # eingegrenzt wird. Darunter (Saisonpause, API-Ausfall) bleibt er ungefiltert -
 # lieber zu viele Spieler zur Wahl als gar keine.
 MIN_ACTIVE_TEAMS = int(os.environ.get("FANTASY_MIN_TEAMS", "8"))
-# Wie weit sich read_game() am Spiel entlanghangeln darf, wenn das erste
-# Fenster nur Leerframes enthält. Zehn Minuten je Schritt, acht Schritte
-# decken jedes Profispiel ab.
-LIVESTATS_MAX_STEPS = 8
-# ... und wie viele solcher Suchanfragen ein ganzer Lauf ausgeben darf. Ohne
-# Deckel könnten 250 Spiele mal 16 Fenster den Lauf ins Zeitlimit treiben.
-LIVESTATS_WALK_BUDGET = int(os.environ.get("FANTASY_MAX_WALKS", "40"))
+# Wie weit sich read_game() vom Anker aus nach vorn tastet, um die Spielzeit
+# zu finden. Zehn Minuten je Schritt; 24 Schritte sind vier Stunden und decken
+# damit auch das letzte Spiel einer langen Serie ab, das Stunden nach dem
+# angesetzten Anpfiff laeuft.
+LIVESTATS_MAX_STEPS = 24
+# ... und wie viele solcher Suchanfragen ein ganzer Lauf insgesamt ausgeben
+# darf. Ohne Deckel koennte ein Neuaufbau ueber 250 Spiele die Action ins
+# Zeitlimit treiben. Was nicht mehr reinpasst, holt der naechste Lauf.
+LIVESTATS_WALK_BUDGET = int(os.environ.get("FANTASY_MAX_WALKS", "3000"))
 REBUILD = os.environ.get("FANTASY_REBUILD", "").lower() in ("1", "true", "yes")
 
 SESSION = requests.Session()
@@ -459,15 +464,21 @@ def score_line(k, d, a, cs):
 def frame_activity(frame):
     """Wie viel in einem Frame überhaupt passiert ist.
 
-    Dient nur der Unterscheidung "echter Spielstand" gegen "leerer Frame".
+    Dient nur der Unterscheidung "echter Spielstand" gegen "Platzhalter".
     Gold zählt mit, weil es als Einziges auch in der ersten Spielminute schon
     ungleich null ist - ein Frame vom Anpfiff hat 0 Kills und 0 CS, aber
-    Startgold.
+    500 Startgold je Spieler.
+
+    Level zählt bewusst *nicht* mit. Fragt man ein Fenster ausserhalb der
+    Spielzeit ab, antwortet der Feed mit zehn Teilnehmern auf Level 1 und
+    sonst überall 0. Mit Level in der Summe sähe dieser Platzhalter nach
+    einem echten Frame aus - und genau daran ist der erste Anlauf
+    gescheitert.
     """
     total = 0
     for side in ("blue", "red"):
         for p in (frame.get(f"{side}Team") or {}).get("participants") or []:
-            for key in ("kills", "deaths", "assists", "creepScore", "totalGold", "level"):
+            for key in ("kills", "deaths", "assists", "creepScore", "totalGold"):
                 try:
                     total += int(p.get(key) or 0)
                 except (TypeError, ValueError):
@@ -476,22 +487,68 @@ def frame_activity(frame):
 
 
 def last_real_frame(frames):
-    """Der letzte Frame, in dem tatsächlich Werte stehen.
-
-    Nach dem Spielende hängt der Feed Frames an, in denen alle
-    Teilnehmerwerte auf 0 stehen. frames[-1] liefert deshalb einen
-    Nullspielstand - und weil "0 Tode" als makelloses Spiel gilt, bekam jeder
-    Spieler dafür auch noch den Bonus. Rückwärts suchen kostet nichts und ist
-    gegen beide Fälle robust: nachlaufende Leerframes und ein Feed, der schon
-    beim Anpfiff abbricht.
-    """
-    for frame in reversed(frames):
+    """Der letzte Frame eines Fensters, in dem tatsächlich Werte stehen."""
+    for frame in reversed(frames or []):
         if frame_activity(frame) > 0:
             return frame
     return None
 
 
-def read_game(game_id, roster_players, roster_teams, diag=None):
+def find_final_window(game_id, anchor, budget):
+    """Das Fenster, das den Schlussstand eines beendeten Spiels enthält.
+
+    Der Livestats-Feed kennt keinen "gib mir den Endstand"-Aufruf. Ohne
+    startingTime liefert er einen Platzhalter, und ein Fenster ausserhalb der
+    Spielzeit ist leer. Man muss also selbst finden, wann das Spiel lief:
+
+    1. Ein Schuss weit hinter das Spielende. Sollte der Feed dort auf den
+       letzten vorhandenen Stand zurückfallen, ist man mit einer Anfrage
+       fertig.
+    2. Sonst grob in Zehn-Minuten-Schritten nach vorn, bis nach einem Fenster
+       mit Werten eines ohne kommt - dazwischen endete das Spiel.
+    3. Dann in diesem Zehn-Minuten-Loch halbieren, damit der Stand nicht
+       Minuten vor dem Ende eingefroren wird.
+
+    Gibt (Fenster, Anzahl Anfragen) zurück, oder (None, n).
+    """
+    used = 0
+
+    def probe(when):
+        nonlocal used
+        if budget.get("walks", 0) >= LIVESTATS_WALK_BUDGET:
+            return None
+        budget["walks"] = budget.get("walks", 0) + 1
+        used += 1
+        win = livestats_window(game_id, when)
+        return win if last_real_frame((win or {}).get("frames")) else None
+
+    far = probe(anchor + timedelta(minutes=10 * LIVESTATS_MAX_STEPS))
+    if far is not None:
+        return far, used
+
+    best, best_at = None, None
+    for step in range(0, LIVESTATS_MAX_STEPS):
+        at = anchor + timedelta(minutes=10 * step)
+        win = probe(at)
+        if win is not None:
+            best, best_at = win, at
+        elif best is not None:
+            break
+    if best is None:
+        return None, used
+
+    lo, hi = best_at, best_at + timedelta(minutes=10)
+    for _ in range(4):
+        mid = lo + (hi - lo) / 2
+        win = probe(mid)
+        if win is not None:
+            best, lo = win, mid
+        else:
+            hi = mid
+    return best, used
+
+
+def read_game(game_id, roster_players, roster_teams, diag=None, match_start=None):
     """Eine Spielzeile je Teilnehmer aus dem Livestats-Fenster.
 
     Gibt None zurück, wenn der Feed für das Spiel (noch) nichts Brauchbares
@@ -502,41 +559,41 @@ def read_game(game_id, roster_players, roster_teams, diag=None):
     if not data:
         return None
     frames = data.get("frames") or []
-    if not frames:
-        return None
     frame = last_real_frame(frames)
+    probes = 0
 
-    # Enthält das Fenster nur Leerframes, liegt es neben dem Spiel. Dann am
-    # Zeitstempel des Fensters entlanghangeln - erst vorwärts, dann rückwärts,
-    # weil nicht feststeht, auf welcher Seite des Spiels das Fenster liegt.
-    # Das kostet Anfragen, deshalb gibt es dafür ein Budget je Lauf: lieber ein
-    # paar Spiele im nächsten Durchgang als ein Lauf, der ins Zeitlimit läuft.
-    walked = 0
+    # Der Feed ohne startingTime liefert bei einem beendeten Spiel nur einen
+    # Platzhalter. Dann muss die Spielzeit gesucht werden. Zwei Ankerpunkte
+    # kommen infrage: der Zeitstempel aus dem Platzhalterfenster (manchmal
+    # liegt er beim Spiel) und der angesetzte Anpfiff des Matches. Der zweite
+    # deckt auch Spiel 2 und 3 einer Serie ab, die Stunden später laufen.
     if frame is None:
-        anchor = parse_iso(frames[0].get("rfc460Timestamp"))
         budget = diag if diag is not None else {}
-        offsets = ([timedelta(minutes=10 * s) for s in range(1, LIVESTATS_MAX_STEPS + 1)]
-                   + [timedelta(minutes=-10 * s) for s in range(1, LIVESTATS_MAX_STEPS + 1)])
-        for offset in offsets:
-            if anchor is None or budget.get("walks", 0) >= LIVESTATS_WALK_BUDGET:
-                break
-            budget["walks"] = budget.get("walks", 0) + 1
-            walked += 1
-            more = livestats_window(game_id, anchor + offset)
-            found = last_real_frame((more or {}).get("frames") or [])
-            if found is not None:
-                frame, data = found, more
+        # Der angesetzte Anpfiff zuerst: er gehört sicher zu diesem Match. Der
+        # Zeitstempel aus dem Platzhalterfenster ist meist schlicht "jetzt" und
+        # damit für ein Spiel von gestern wertlos - nur als zweiter Versuch.
+        anchors = [match_start]
+        if frames:
+            anchors.append(parse_iso(frames[0].get("rfc460Timestamp")))
+        seen = set()
+        for anchor in anchors:
+            if anchor is None or anchor in seen:
+                continue
+            seen.add(anchor)
+            win, used = find_final_window(game_id, anchor, budget)
+            probes += used
+            if win is not None:
+                data, frame = win, last_real_frame(win.get("frames"))
                 break
     if frame is None:
         return None
 
     if diag is not None and not diag.get("shown"):
         diag["shown"] = True
-        idx = frames.index(frame) + 1 if frame in frames else 0
-        print(f"  Beispiel {game_id}: {len(frames)} Frames, genutzt "
-              + (f"Nr. {idx}" if idx else f"ein Nachbarfenster ({walked} gesucht)")
-              + f" (Stand {frame.get('rfc460Timestamp')},"
-                f" {frame_activity(frame)} Punkte Aktivität)")
+        where = ("dem Standardfenster" if probes == 0
+                 else f"einem gesuchten Fenster ({probes} Anfragen)")
+        print(f"  Beispiel {game_id}: aus {where}, Stand {frame.get('rfc460Timestamp')},"
+              f" {frame_activity(frame)} Punkte Aktivität")
 
     meta = data.get("gameMetadata") or {}
     lines = []
@@ -952,7 +1009,8 @@ def main(dry_run=False):
         match_lines = []
         complete = True
         for game in games:
-            lines = read_game(game["id"], roster_players, roster_teams, frame_diag)
+            lines = read_game(game["id"], roster_players, roster_teams,
+                              frame_diag, match["start"])
             if lines is None:
                 complete = False
                 break

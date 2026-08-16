@@ -106,6 +106,66 @@ STATS = {
     "g-3": [("t-gamma", 3, 2, 5, 260), ("t-beta", 2, 3, 4, 250)],
 }
 
+# Wann welches Spiel wirklich lief. Spiel 2 der Serie faengt erst 45 Minuten
+# nach dem Anpfiff des Matches an - genau deshalb reicht es nicht, einfach am
+# Match-Anpfiff nachzufragen.
+GAME_TIMES = {
+    "g-1": (PAST, timedelta(minutes=32)),
+    "g-2": (PAST + timedelta(minutes=45), timedelta(minutes=28)),
+    "g-3": (LAST_WEEK, timedelta(minutes=30)),
+}
+
+
+def livestats_reply(gid, at):
+    """Ein Fenster, wie der echte Feed es liefert.
+
+    Ausserhalb der Spielzeit kommt *kein* leeres Ergebnis, sondern ein
+    Platzhalter: zehn Teilnehmer auf Level 1, alles andere 0. Genau daran ist
+    der erste Anlauf gescheitert - das sah nach einem echten Frame aus.
+    Innerhalb der Spielzeit stehen die Werte anteilig zur gespielten Zeit, der
+    Endstand also nur ganz am Schluss.
+    """
+    start, length = GAME_TIMES[gid]
+    end = start + length
+    meta, frames = {}, []
+    pmeta_by_side = {}
+    for side, (tid, k, d, a, cs) in zip(("blue", "red"), STATS[gid]):
+        pmeta = [{"participantId": i, "esportsPlayerId": f"{tid}-{role}",
+                  "summonerName": f"{tid}-{role}", "championId": "Ahri", "role": role}
+                 for i, role in enumerate(ROLES, start=1)]
+        meta[f"{side}TeamMetadata"] = {"esportsTeamId": tid, "participantMetadata": pmeta}
+        pmeta_by_side[side] = (tid, k, d, a, cs)
+
+    def snapshot(when):
+        share = (when - start) / length
+        frame = {"rfc460Timestamp": collect.iso(when),
+                 "gameState": "in_game" if when < end else "finished"}
+        for side, (_tid, k, d, a, cs) in pmeta_by_side.items():
+            frame[f"{side}Team"] = {"participants": [
+                {"participantId": i, "kills": round(k * share), "deaths": round(d * share),
+                 "assists": round(a * share), "creepScore": round(cs * share),
+                 "totalGold": 500 + round(11500 * share), "level": 1 + round(15 * share)}
+                for i in range(1, len(ROLES) + 1)]}
+        return frame
+
+    if at is None:
+        # Ohne startingTime kennt der Feed das Spiel nicht mehr.
+        at = None
+    if at is None or at < start or at > end:
+        placeholder = {"rfc460Timestamp": collect.iso(NOW), "gameState": "finished"}
+        for side in ("blue", "red"):
+            placeholder[f"{side}Team"] = {"participants": [
+                {"participantId": i, "kills": 0, "deaths": 0, "assists": 0,
+                 "creepScore": 0, "totalGold": 0, "level": 1}
+                for i in range(1, len(ROLES) + 1)]}
+        return {"gameMetadata": meta, "frames": [placeholder]}
+
+    # Zehn Frames im Abstand von zehn Sekunden, wie im echten Fenster.
+    for step in range(10):
+        when = min(at + timedelta(seconds=10 * step), end)
+        frames.append(snapshot(when))
+    return {"gameMetadata": meta, "frames": frames}
+
 
 def fake_get(url, params=None, headers=None, tries=3):
     params = params or {}
@@ -113,30 +173,7 @@ def fake_get(url, params=None, headers=None, tries=3):
         gid = url.rsplit("/", 1)[-1]
         if gid not in STATS:
             return None
-        meta = {}
-        frames = {"blueTeam": {"participants": []}, "redTeam": {"participants": []}}
-        empty = {"blueTeam": {"participants": []}, "redTeam": {"participants": []}}
-        for side, (tid, k, d, a, cs) in zip(("blue", "red"), STATS[gid]):
-            pmeta, parts, zeros = [], [], []
-            for i, role in enumerate(ROLES, start=1):
-                pmeta.append({"participantId": i, "esportsPlayerId": f"{tid}-{role}",
-                              "summonerName": f"{tid}-{role}", "championId": "Ahri", "role": role})
-                parts.append({"participantId": i, "kills": k, "deaths": d, "assists": a,
-                              "creepScore": cs, "totalGold": 12000, "level": 16})
-                zeros.append({"participantId": i, "kills": 0, "deaths": 0, "assists": 0,
-                              "creepScore": 0, "totalGold": 0, "level": 0})
-            meta[f"{side}TeamMetadata"] = {"esportsTeamId": tid, "participantMetadata": pmeta}
-            frames[f"{side}Team"] = {"participants": parts}
-            empty[f"{side}Team"] = {"participants": zeros}
-        # So kommt der Feed wirklich: hinter dem Schlussstand haengen noch
-        # Frames, in denen alles auf 0 steht. Genau die hat der Sammler frueher
-        # gewertet - jede Spielzeile stand auf 0/0/0 mit 0 CS und bekam den
-        # Bonus fuer "kein Tod" obendrauf.
-        return {"gameMetadata": meta, "frames": [
-            dict(frames, gameState="in_game", rfc460Timestamp="2026-08-15T18:30:00Z"),
-            dict(empty, gameState="finished", rfc460Timestamp="2026-08-15T18:30:10Z"),
-            dict(empty, gameState="finished", rfc460Timestamp="2026-08-15T18:30:20Z"),
-        ]}
+        return livestats_reply(gid, collect.parse_iso(params.get("startingTime")))
 
     if url.endswith("/getLeagues"):
         return {"data": {"leagues": [{"id": LEAGUE_ID, "name": "LEC"}]}}
@@ -234,20 +271,51 @@ kickoff = {"blueTeam": {"participants": [{"kills": 0, "deaths": 0, "assists": 0,
                                           "creepScore": 0, "totalGold": 500, "level": 1}]},
            "redTeam": {"participants": []}}
 check("Anpfiff-Frame gilt als echt", collect.last_real_frame([kickoff]) is kickoff)
+# Der Platzhalter, den der Feed ausserhalb der Spielzeit liefert: Level 1,
+# sonst alles 0. Zaehlte Level mit, saehe er wie ein echter Frame aus - genau
+# daran ist der erste Anlauf gescheitert.
+placeholder = {"blueTeam": {"participants": [
+    {"kills": 0, "deaths": 0, "assists": 0, "creepScore": 0, "totalGold": 0, "level": 1}
+    for _ in range(5)]}, "redTeam": {"participants": []}}
+check("Platzhalter ausserhalb der Spielzeit gilt nicht als Frame",
+      collect.frame_activity(placeholder) == 0, collect.frame_activity(placeholder))
+check("Und ergibt deshalb auch keinen Frame",
+      collect.last_real_frame([placeholder]) is None)
 
-# Ein Spiel, dessen Fenster nur Nullen enthaelt, darf nicht gespeichert
-# werden - lieber beim naechsten Lauf nochmal fragen als Nullen in die App.
-_real_get = collect._get
-collect._get = lambda url, params=None, headers=None, tries=3: (
-    {"gameMetadata": {"blueTeamMetadata": {"esportsTeamId": "t-alpha", "participantMetadata": [
-        {"participantId": 1, "esportsPlayerId": "t-alpha-top", "championId": "Ahri", "role": "top"}]}},
-     "frames": [{"blueTeam": {"participants": [
-         {"participantId": 1, "kills": 0, "deaths": 0, "assists": 0, "creepScore": 0}]},
-         "redTeam": {"participants": []}, "rfc460Timestamp": "2026-08-15T18:30:00Z"}]}
-    if "/livestats/" in url else _real_get(url, params, headers, tries))
+print("\n== Spielzeit im Feed finden ==")
+# Ohne startingTime kennt der Feed ein beendetes Spiel nicht mehr. Der Sammler
+# muss die Spielzeit selbst finden - und zwar bis ans Ende, sonst friert der
+# Stand mitten im Spiel ein.
+budget = {}
+win, used = collect.find_final_window("g-1", PAST, budget)
+check("Fenster mit dem Schlussstand gefunden", win is not None)
+if win:
+    last = collect.last_real_frame(win["frames"])
+    p = last["blueTeam"]["participants"][0]
+    check("Und zwar der Schlussstand, nicht ein Zwischenstand",
+          (p["kills"], p["deaths"], p["assists"], p["creepScore"]) == (4, 1, 6, 280), p)
+check("Die Suche kostet Anfragen, aber nicht beliebig viele", 0 < used <= 30, used)
+check("Das Budget wird mitgezaehlt", budget["walks"] == used, budget)
+
+# Spiel 2 der Serie laeuft erst 45 Minuten nach dem angesetzten Anpfiff - am
+# Match-Anpfiff allein wuerde man es nicht finden.
+win2, _ = collect.find_final_window("g-2", PAST, {})
+check("Auch das zweite Spiel einer Serie wird gefunden", win2 is not None)
+if win2:
+    p2 = collect.last_real_frame(win2["frames"])["blueTeam"]["participants"][0]
+    check("Mit seinem eigenen Schlussstand",
+          (p2["kills"], p2["deaths"], p2["assists"], p2["creepScore"]) == (6, 0, 8, 310), p2)
+
+# Ist das Budget aufgebraucht, hoert die Suche auf, statt den Lauf zu sprengen.
+erschoepft = {"walks": collect.LIVESTATS_WALK_BUDGET}
+win3, used3 = collect.find_final_window("g-1", PAST, erschoepft)
+check("Bei aufgebrauchtem Budget wird nicht weitergesucht",
+      win3 is None and used3 == 0, (win3 is not None, used3))
+
+# Ein Spiel, das der Feed gar nicht kennt, darf nicht gespeichert werden -
+# lieber beim naechsten Lauf nochmal fragen als Nullen in die App.
 check("Ein Spiel ganz ohne Werte wird nicht gespeichert",
-      collect.read_game("g-null", {}, {}) is None)
-collect._get = _real_get
+      collect.read_game("g-1", {}, {}, None, PAST - timedelta(days=400)) is None)
 
 # ---------------------------------------------------------------- Ankunft pruefen
 

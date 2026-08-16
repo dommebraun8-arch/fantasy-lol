@@ -353,6 +353,11 @@ await wp.waitForSelector("#auth-form");
 // sein, nicht nur leer. (display:flex schlaegt sonst das hidden-Attribut.)
 check("Ohne Anmeldung ist die Leiste nicht da",
   await wp.locator("#rail:visible").count() === 0);
+// Die Versionskennung beantwortet "ist mein Deploy angekommen?" - sie muss
+// deshalb auch ohne Anmeldung dastehen.
+check("Version steht auf der Seite",
+  /^v\d{4}\.\d{2}\.\d{2}/.test((await wp.locator("#build").innerText()).trim()),
+  await wp.locator("#build").innerText());
 await wp.screenshot({ path: SHOTS + "/7c-desktop-login.png" });
 
 console.log("\n== Fehlerfreiheit ==");

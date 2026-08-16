@@ -20,6 +20,7 @@ const ROLES = [
 const ROLE_LABEL = Object.fromEntries(ROLES.map(r => [r.key, r.label]));
 
 const state = {
+  build: null,       // Fassung, die der Server ausliefert
   user: null,
   leagues: [],
   leagueId: null,
@@ -1084,6 +1085,10 @@ async function openLeague(id) {
 
 async function loadMe() {
   const res = await api("/api/me");
+  if (res.data && res.data.build) {
+    state.build = res.data.build;
+    document.getElementById("build").textContent = "v" + res.data.build;
+  }
   if (!res.ok || !res.data.user) { state.user = null; return render(); }
   state.user = res.data.user;
   state.leagues = res.data.leagues || [];

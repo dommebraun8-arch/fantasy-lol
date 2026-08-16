@@ -2,6 +2,19 @@
  * Kleinkram, den mehrere Module brauchen: Antworten, IDs, Rundenrechnung.
  */
 
+/**
+ * Version der ausgelieferten App.
+ *
+ * Bei einer sichtbaren Änderung hochzählen. Sie steht in `/api/me` und unten
+ * auf der Seite, damit sich "läuft die neue Fassung schon?" in einem Blick
+ * beantworten lässt statt durch Suchen im Bildschirmfoto:
+ *
+ *     curl -s https://<deine-url>/api/me | grep -o '"build":"[^"]*"'
+ *
+ * Genau diese Frage hat schon einmal Zeit gekostet.
+ */
+export const BUILD = "2026.08.16-3";
+
 export const ROLES = ["top", "jungle", "mid", "bottom", "support"];
 export const ROLE_LABELS = { top: "Top", jungle: "Jungle", mid: "Mid", bottom: "Bot", support: "Support" };
 

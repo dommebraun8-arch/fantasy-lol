@@ -12,7 +12,7 @@ import {
   handleMarket, handleSetSquad, handleStandings, listMyLeagues,
 } from "./game.js";
 import { handleIngest } from "./ingest.js";
-import { fail, isRoundKey, json, roundFor } from "./util.js";
+import { BUILD, fail, isRoundKey, json, roundFor } from "./util.js";
 
 const SECURITY_HEADERS = {
   "x-content-type-options": "nosniff",
@@ -43,8 +43,13 @@ async function api(request, env, url) {
   const user = await currentUser(request, env);
   if (path === "/api/me") {
     if (method !== "GET") return fail(405, "Methode nicht erlaubt");
-    if (!user) return json({ user: null, round: roundFor(Date.now()) });
-    return json({ user, leagues: await listMyLeagues(env, user), round: roundFor(Date.now()) });
+    // build steht auch ohne Anmeldung drin: damit laesst sich von aussen
+    // pruefen, welche Fassung ausgeliefert wird.
+    if (!user) return json({ user: null, build: BUILD, round: roundFor(Date.now()) });
+    return json({
+      user, build: BUILD,
+      leagues: await listMyLeagues(env, user), round: roundFor(Date.now()),
+    });
   }
 
   if (!user) return fail(401, "Nicht angemeldet");

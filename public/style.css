@@ -744,6 +744,13 @@ button.line-head:active { background: rgba(255, 255, 255, 0.06); }
 }
 
 /* Sichtbarer Fokus für Tastatur, ohne ihn bei Mausklicks aufzudrängen. */
+/* Versionskennung: klein, unten, immer da. */
+.build {
+  font-family: var(--mono); font-size: 0.5938rem; color: var(--text-dim);
+  opacity: 0.5; text-align: center; margin: 0; padding: 0 0 84px;
+}
+@media (min-width: 760px) { .build { padding-bottom: var(--s4); } }
+
 :focus-visible { outline: 2px solid var(--accent-line); outline-offset: 2px; border-radius: 6px; }
 
 /* =========================================================================

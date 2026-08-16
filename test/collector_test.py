@@ -80,11 +80,14 @@ EVENTS = [
                          team_entry("t-beta", "BET", 0, "loss")]}},
     # Gamma hat diese Runde noch nicht gespielt - nur mit so einem Team laesst
     # sich ueberhaupt noch ein Kader aufstellen.
+    # Ohne Team-IDs, nur mit Kuerzel und Name - genau so liefert der echte
+    # Spielplan viele Eintraege. Frueher verschwand dadurch jeder Anpfiff und
+    # die Sperre war wirkungslos.
     {"startTime": collect.iso(SOON), "state": "unstarted",
      "blockName": "Woche 1", "league": {"name": "LEC"},
      "match": {"id": "m-soon", "strategy": {"type": "bestOf", "count": 3}, "games": [],
-               "teams": [team_entry("t-gamma", "GAM", 0, None),
-                         team_entry("t-beta", "BET", 0, None)]}},
+               "teams": [{"id": None, "name": "GAM Esports", "code": "GAM", "result": None},
+                         {"id": None, "name": "BET Esports", "code": "BET", "result": None}]}},
     # Bo1 ohne "outcome" und ohne strategy.count - genau die Form, an der der
     # erste Produktivlauf jedes einzelne Match verworfen hat.
     {"startTime": collect.iso(LAST_WEEK), "state": "completed",
@@ -175,6 +178,9 @@ check("Verlierer des Bo1 bekommt ihn nicht",
       not any(l.get("wb") for l in state["lines"] if l["g"] == "g-3" and l["p"].startswith("t-beta")))
 check("Anpfiffe fuer die Sperren gesammelt",
       len(state["fixtures"].get(ROUND_KEY, {})) == 3, state["fixtures"])
+check("Team ohne ID wird ueber das Kuerzel aufgeloest",
+      state["fixtures"][ROUND_KEY].get("t-gamma") == int(SOON.timestamp()),
+      state["fixtures"].get(ROUND_KEY))
 check("Frueheste Partie je Team zaehlt",
       state["fixtures"][ROUND_KEY]["t-beta"] == int(PAST.timestamp()),
       (state["fixtures"][ROUND_KEY].get("t-beta"), int(PAST.timestamp())))

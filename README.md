@@ -205,7 +205,10 @@ einzelner Platz und der Rest wäre weg.
 - **Welche Matches:** `getSchedule` plus `getCompletedEvents` je Turnier der
   laufenden Saison.
 - **Anpfiffe für die Sperren:** `getSchedule`, erster Anpfiff jedes Teams in
-  der laufenden und der kommenden Runde.
+  der laufenden und der kommenden Runde. Achtung: der Spielplan liefert für
+  viele Einträge `"id": null` bei den Teams. Name und Kürzel stehen aber drin,
+  darüber wird die Team-ID aus `getTeams` nachgeschlagen - ohne das verschwindet
+  jeder Anpfiff und die Sperre greift nie.
 
 Genutzt wird dieselbe öffentliche API, die lolesports.com im Browser aufruft -
 kein Schlüssel nötig, aber auch keine Zusage von Riot, dass sie so bleibt.

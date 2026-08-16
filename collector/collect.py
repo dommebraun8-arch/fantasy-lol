@@ -310,7 +310,38 @@ def collect_matches():
     return sorted(by_id.values(), key=lambda m: m["start"], reverse=True)
 
 
-def series_winner(teams, strategy):
+def build_team_index(roster_teams):
+    """Kürzel und Name -> Team-ID.
+
+    Der Spielplan liefert für viele Matches `"id": null` bei den Teams; Name
+    und Kürzel stehen aber drin. Ohne diese Übersetzung fällt jede Zuordnung
+    aus - beim ersten Produktivlauf hat das sämtliche Anpfiffe verschluckt und
+    damit die Sperre wirkungslos gemacht.
+    """
+    index = {}
+    for tid, info in roster_teams.items():
+        for key in (info.get("code"), info.get("name")):
+            if key:
+                index.setdefault(key.strip().upper(), tid)
+    return index
+
+
+def resolve_team(team, index):
+    """Team-ID eines Spielplan-Eintrags, notfalls über Kürzel oder Name."""
+    tid = team.get("id")
+    if tid:
+        return tid
+    if not index:
+        return None
+    for key in (team.get("code"), team.get("name")):
+        if key:
+            found = index.get(str(key).strip().upper())
+            if found:
+                return found
+    return None
+
+
+def series_winner(teams, strategy, index=None):
     """Team-ID des Serien-Siegers, oder None wenn der Endstand nichts hergibt.
 
     Riot meldet den Sieger direkt über `result.outcome` - das ist die
@@ -322,8 +353,9 @@ def series_winner(teams, strategy):
     if not teams or len(teams) < 2:
         return None
 
-    winners = [t.get("id") for t in teams
-               if (t.get("result") or {}).get("outcome") == "win" and t.get("id")]
+    winners = [resolve_team(t, index) for t in teams
+               if (t.get("result") or {}).get("outcome") == "win"]
+    winners = [w for w in winners if w]
     if len(winners) == 1:
         return winners[0]
 
@@ -332,11 +364,13 @@ def series_winner(teams, strategy):
         w = (t.get("result") or {}).get("gameWins")
         if not isinstance(w, int):
             return None
-        wins.append((t.get("id"), w))
+        wins.append((resolve_team(t, index), w))
 
     ranked = sorted(wins, key=lambda x: x[1], reverse=True)
     if ranked[0][1] == ranked[1][1]:
         return None  # Gleichstand ist kein Endstand
+    if not ranked[0][0]:
+        return None  # Sieger steht fest, laesst sich aber keinem Team zuordnen
 
     count = (strategy or {}).get("count")
     if isinstance(count, int) and count >= 1:
@@ -348,13 +382,13 @@ def series_winner(teams, strategy):
     return ranked[0][0]
 
 
-def match_result(match, allow_lookup):
+def match_result(match, allow_lookup, index=None):
     """Sieger eines Matches, notfalls über getEventDetails nachgeschlagen.
 
     Der Spielplan liefert nicht immer ein `result` mit; die Detailabfrage
     schon. Sie kostet aber einen Aufruf je Match, deshalb nur begrenzt oft.
     """
-    winner = series_winner(match["teams"], match["strategy"])
+    winner = series_winner(match["teams"], match["strategy"], index)
     if winner or not allow_lookup:
         return winner, False
     detail = api("getEventDetails", id=match["id"])
@@ -367,7 +401,7 @@ def match_result(match, allow_lookup):
         match["games"] = detail_match["games"]
     if detail_match.get("strategy"):
         match["strategy"] = detail_match["strategy"]
-    return series_winner(match["teams"], match["strategy"]), True
+    return series_winner(match["teams"], match["strategy"], index), True
 
 
 def match_games(match):
@@ -599,7 +633,7 @@ def season_totals(data, now):
 
 # ---------------------------------------------------------------- Spielplan
 
-def collect_fixtures(now):
+def collect_fixtures(now, index=None):
     """Erster Anpfiff jedes Teams, je Runde.
 
     Daran hängt die Sperre: sobald das Team eines Spielers angepfiffen hat, ist
@@ -628,7 +662,7 @@ def collect_fixtures(now):
             if key not in wanted:
                 continue
             for team in match.get("teams") or []:
-                tid = team.get("id")
+                tid = resolve_team(team, index)
                 if not tid:
                     continue
                 per_round = found.setdefault(key, {})
@@ -751,6 +785,7 @@ def main(dry_run=False):
     for pid, entry in data["players"].items():
         if pid not in roster_players:
             entry["active"] = False
+    team_index = build_team_index(roster_teams)
     print(f"  {len(roster_players)} aktive Spieler in {len(roster_teams)} Teams")
 
     print("Abgeschlossene Matches suchen…")
@@ -771,7 +806,7 @@ def main(dry_run=False):
         if match["id"] in done_matches:
             continue
 
-        winner, used_lookup = match_result(match, lookups < MAX_RESULT_LOOKUPS)
+        winner, used_lookup = match_result(match, lookups < MAX_RESULT_LOOKUPS, team_index)
         if used_lookup:
             lookups += 1
         if winner is None:
@@ -882,7 +917,7 @@ def main(dry_run=False):
     data["lines"].sort(key=lambda l: (l.get("t", ""), l.get("g", ""), l.get("p", "")))
 
     print("Spielplan für die Sperren holen…")
-    data["fixtures"] = collect_fixtures(now)
+    data["fixtures"] = collect_fixtures(now, team_index)
     print(f"  {sum(len(v) for v in data['fixtures'].values())} Anpfiffe in "
           f"{len(data['fixtures'])} Runden")
 

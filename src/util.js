@@ -13,7 +13,7 @@
  *
  * Genau diese Frage hat schon einmal Zeit gekostet.
  */
-export const BUILD = "2026.08.16-3";
+export const BUILD = "2026.08.16-4";
 
 export const ROLES = ["top", "jungle", "mid", "bottom", "support"];
 export const ROLE_LABELS = { top: "Top", jungle: "Jungle", mid: "Mid", bottom: "Bot", support: "Support" };

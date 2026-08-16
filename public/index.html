@@ -11,6 +11,57 @@
 </head>
 <body>
 
+<!-- Die offiziellen Rollenzeichen, nachgezeichnet: Gras für den Jungle, das
+     Quadrat mit ausgeschnittener Ecke für Top und Bot (gespiegelt, wie die
+     Lanes auf der Kluft liegen), das durchgestrichene Quadrat für Mid und das
+     geflügelte Kreuz für den Support.
+
+     Als Pfade und nicht als Bilddateien: sie skalieren verlustfrei von 13px
+     auf der Kluft bis zur großen Karte, nehmen die Farbe der Mannschaft an
+     und müssen nicht nachgeladen werden. -->
+<svg width="0" height="0" aria-hidden="true" focusable="false" class="sprite">
+  <defs>
+    <symbol id="ic-top" viewBox="0 0 24 24">
+      <path d="M9.5 3.5H20.5V20.5H3.5V9.5Z" fill="none"
+            stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"/>
+      <rect x="9.8" y="9.8" width="4.4" height="4.4" fill="currentColor"/>
+    </symbol>
+
+    <g id="jg-half">
+      <path d="M11.7 21.2C8.2 17 5.4 12.6 3.1 7.9c3.5 3.4 6.4 7.9 8.6 13.3z"/>
+      <path d="M11.9 21.2C10.1 15.9 8.9 10.6 8.3 5.2c1.9 5.1 3.1 10.4 3.6 16z"/>
+    </g>
+    <symbol id="ic-jungle" viewBox="0 0 24 24" fill="currentColor">
+      <use href="#jg-half"/>
+      <use href="#jg-half" transform="translate(24,0) scale(-1,1)"/>
+      <path d="M12 21.5c-1.5-6.5-1.5-13.2 0-19.7 1.5 6.5 1.5 13.2 0 19.7z"/>
+    </symbol>
+
+    <symbol id="ic-mid" viewBox="0 0 24 24">
+      <path d="M3.5 3.5H20.5V20.5H3.5Z" fill="none"
+            stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"/>
+      <path d="M5.6 18.4 18.4 5.6" stroke="currentColor" stroke-width="2.6"
+            stroke-linecap="round"/>
+    </symbol>
+
+    <symbol id="ic-bottom" viewBox="0 0 24 24">
+      <path d="M3.5 3.5H20.5V14.5L14.5 20.5H3.5Z" fill="none"
+            stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"/>
+      <rect x="9.8" y="9.8" width="4.4" height="4.4" fill="currentColor"/>
+    </symbol>
+
+    <g id="sp-wing">
+      <path d="M13.2 12.4c2.8-3.4 6.1-5 9.9-4.8-1.3 3.5-4.6 5.2-9.9 4.8z"/>
+    </g>
+    <symbol id="ic-support" viewBox="0 0 24 24" fill="currentColor">
+      <use href="#sp-wing"/>
+      <use href="#sp-wing" transform="translate(24,0) scale(-1,1)"/>
+      <path d="M12 3.4v17.8M8.6 9.2h6.8" stroke="currentColor" stroke-width="2.6"
+            stroke-linecap="round" fill="none"/>
+    </symbol>
+  </defs>
+</svg>
+
 <!-- Am Telefon steht die Marke oben und die Navigation unten am Daumen; ab
      760px wandert beides in die Leiste links, wie auf lolkleena. -->
 <div class="topbar">

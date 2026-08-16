@@ -75,6 +75,106 @@ function avatar(p) {
   return `<img class="avatar" src="${esc(p.image)}" alt="" loading="lazy">`;
 }
 
+/** Das Rollenzeichen aus dem Sprite in index.html. */
+function roleIcon(role, cls = "role-ico") {
+  return `<svg class="${cls}" aria-hidden="true"><use href="#ic-${esc(role)}"/></svg>`;
+}
+
+/**
+ * Der Farbton einer Mannschaft, aus dem Kürzel gerechnet.
+ *
+ * Vereinsfarben liefert die API nicht, und eine Liste von Hand veraltet mit
+ * jedem Kaderwechsel. Gerechnet bekommt jede Mannschaft automatisch eine
+ * eigene Farbe, und dasselbe Kürzel ergibt immer dieselbe - darauf beruht der
+ * eigentliche Nutzen: fünf Farben im Kader heißt fünf Vereine, zwei gleiche
+ * heißt zwei Spieler, die am selben Tag gesperrt sind.
+ *
+ * Bewusst keine echten Vereinsfarben: die halbe LEC spielt in Rot, damit wäre
+ * die Unterscheidbarkeit dahin - und genau die ist hier der Zweck.
+ */
+function teamHue(code) {
+  const text = String(code || "?").toUpperCase();
+  let hash = 0;
+  for (let i = 0; i < text.length; i++) hash = (hash * 31 + text.charCodeAt(i)) % 360;
+  // Gelbgrün um 60-80 herum kollidiert mit dem goldenen Akzent der App.
+  return hash >= 55 && hash <= 85 ? (hash + 40) % 360 : hash;
+}
+
+/** Wappen der Liga, wenn der Sammler eines mitgeschickt hat. */
+function leagueCrest(league) {
+  const src = (state.leagueCrests || {})[league];
+  if (src) return `<span class="leaguemark"><img src="${esc(src)}" alt="${esc(league)}" loading="lazy"></span>`;
+  if (!league) return '<span class="leaguemark"></span>';
+  return `<span class="leaguemark"><span class="fb">${esc(league)}</span></span>`;
+}
+
+/** Vereinswappen, sonst das Kürzel im selben Rahmen. */
+function teamCrest(p) {
+  const code = esc(p.code || p.team || "?");
+  if (p.teamImage) {
+    return `<span class="crest"><img src="${esc(p.teamImage)}" alt="${code}" loading="lazy"></span>`;
+  }
+  return `<span class="crest"><span class="fb">${code}</span></span>`;
+}
+
+/**
+ * Eine Spielerkarte.
+ *
+ * Vier Zonen von oben nach unten: Herkunft, Gesicht, Name, Zahlen. Die
+ * Fußleiste trägt genau die zwei Werte, um die es beim Aufstellen geht - was
+ * er kostet und was er bringt.
+ *
+ * Dieselbe Funktion für alle drei Größen: `size` ist "s" auf der Kluft, "" im
+ * Markt, "l" in der Auswahl. Ein zweites Bauteil für kleine Karten würde
+ * garantiert irgendwann auseinanderlaufen.
+ */
+function cardHtml(p, opts = {}) {
+  const {
+    size = "", pts = null, ptsLabel = "Punkte", price = null,
+    captain = false, locked = false, owned = false, tag = "",
+    action = "", role = null, sub = null,
+  } = opts;
+
+  const cls = ["pcard", size, captain ? "cap" : "", locked ? "locked" : "",
+    owned ? "owned" : ""].filter(Boolean).join(" ");
+  const face = p.image
+    ? `<img class="portrait" src="${esc(p.image)}" alt="" loading="lazy">`
+    : `<span class="mono-face" aria-hidden="true">${esc((p.name || "?").slice(0, 1).toUpperCase())}</span>`;
+
+  const line = sub !== null ? sub
+    : `${ROLE_LABEL[p.role] || p.role || ""}${p.code ? " · " + p.code : ""}`;
+
+  return `
+    <div class="${cls} hue" data-hue="${teamHue(p.code || p.team)}">
+      ${captain ? '<span class="seal" aria-hidden="true">C</span>' : ""}
+      ${tag ? `<span class="tag">${esc(tag)}</span>` : ""}
+      <div class="card-top">${leagueCrest(p.league)}${teamCrest(p)}</div>
+      ${face}
+      <div class="plate">
+        <span class="name">${esc(p.name)}</span>
+        <span class="sub">${roleIcon(role || p.role)}${esc(line)}</span>
+      </div>
+      <div class="foot">
+        <span class="price"><span class="k">Preis</span><span class="v">${num(price)}</span></span>
+        <span class="pts"><span class="k">${esc(ptsLabel)}</span><span class="v">${num(pts)}</span></span>
+      </div>
+      ${action}
+    </div>`;
+}
+
+/**
+ * Die Farbtöne als CSS-Variable setzen.
+ *
+ * Unter der strengen CSP (style-src 'self') sind style-Attribute im Markup
+ * wirkungslos - der Wert steht deshalb in data-hue und wandert hier in eine
+ * Variable.
+ */
+function paintHues(root) {
+  root.querySelectorAll(".hue[data-hue]").forEach(el => {
+    el.style.setProperty("--hue", el.getAttribute("data-hue"));
+  });
+}
+
 /** -0.5 -> "−0,5", 0.02 -> "+0,02". Deutsches Komma, echtes Minuszeichen. */
 function fmtFactor(n) {
   const v = Math.round(Number(n) * 1000) / 1000;
@@ -405,27 +505,36 @@ function riftMapSvg() {
  * sofort klar, welche Rolle noch frei ist.
  */
 function spotHtml(role, slot) {
-  const filled = !!slot;
-  const locked = filled && slot.locked;
-  const cap = filled && slot.captain;
-  const pts = filled ? slot.pts * (cap ? 2 : 1) : 0;
-
-  const inner = filled ? `
-    ${avatar(slot)}
-    <span class="spot-name">${esc(slot.name)}</span>
-    <span class="spot-sub">${esc(slot.code || slot.team)} · ${num(slot.paid)}</span>`
-    : `<span class="avatar" aria-hidden="true">+</span>
-       <span class="spot-name">frei</span>
-       <span class="spot-sub">wählen</span>`;
-
+  if (!slot) {
+    return `
+      <div class="spot spot-${role}">
+        <button class="pcard s empty" data-pick="${role}" title="Spieler wählen">
+          ${roleIcon(role, "role-big")}
+          <span class="plus" aria-hidden="true">+</span>
+          <span class="what">${esc(ROLE_LABEL[role])}</span>
+        </button>
+      </div>`;
+  }
+  const cap = !!slot.captain;
+  const card = cardHtml(slot, {
+    size: "s",
+    role,
+    pts: slot.pts * (cap ? 2 : 1),
+    ptsLabel: cap ? "Punkte ×2" : "Punkte",
+    price: slot.paid,
+    captain: cap,
+    locked: slot.locked,
+    action: `<button class="spot-cap ${cap ? "on" : ""}" data-cap="${role}"
+               ${slot.locked ? "disabled" : ""}
+               title="Kapitän: doppelte Punkte">C</button>`,
+  });
+  // Die Karte selbst ist der Knopf zum Tauschen; der Kapitänsknopf liegt
+  // darauf und muss den Klick abfangen (siehe wireLeague).
   return `
-    <div class="spot spot-${role} ${cap ? "cap" : ""} ${locked ? "locked" : ""} ${filled ? "" : "empty"}">
-      <span class="spot-role">${esc(ROLE_LABEL[role])}</span>
-      <button class="spot-main" data-pick="${role}" ${locked ? "disabled" : ""}
-              title="${filled ? "Tauschen" : "Spieler wählen"}">${inner}</button>
-      <span class="spot-pts ${pts ? "" : "zero"}">${num(pts)}</span>
-      <button class="spot-cap ${cap ? "on" : ""}" data-cap="${role}"
-              ${!filled || locked ? "disabled" : ""} title="Kapitän: doppelte Punkte">C</button>
+    <div class="spot spot-${role}">
+      <button class="spot-hit" data-pick="${role}" ${slot.locked ? "disabled" : ""}
+              title="Tauschen" aria-label="${esc(slot.name)} tauschen"></button>
+      ${card}
     </div>`;
 }
 
@@ -606,7 +715,8 @@ function pointsPanelHtml() {
       </div>`).join("")}`;
 }
 
-let marketFilter = { role: "", league: "", q: "", sort: "price", desc: true };
+let marketFilter = { role: "", league: "", q: "", sort: "price", desc: true,
+                     view: "cards" };
 
 /**
  * Die Spalten des Marktes. Jede weiss, wie sie sortiert und wie sie sich
@@ -716,9 +826,17 @@ function marketPanelHtml() {
 
   return `
     <div class="card">
-      <h2>Spielermarkt</h2>
+      <div class="row">
+        <h2 class="hd">Spielermarkt</h2>
+        <div class="spacer"></div>
+        <div class="viewswitch">
+          <button class="chip ${marketFilter.view === "cards" ? "on" : ""}" data-mview="cards">Karten</button>
+          <button class="chip ${marketFilter.view === "table" ? "on" : ""}" data-mview="table">Tabelle</button>
+        </div>
+      </div>
       <p class="sub">Antippen setzt den Spieler auf seine Position in deinem Kader.
-        Über die Spaltenköpfe sortieren.</p>
+        ${marketFilter.view === "table" ? "Über die Spaltenköpfe sortieren."
+          : "Zum Vergleichen vieler Spieler ist die Tabelle besser."}</p>
       ${messageHtml()}
       <input class="search" id="market-q" placeholder="Name oder Team" value="${esc(marketFilter.q)}">
       <div class="filters">
@@ -729,7 +847,26 @@ function marketPanelHtml() {
         <button class="chip ${!marketFilter.league ? "on" : ""}" data-mleague="">Alle Ligen</button>
         ${leagues.map(l => `<button class="chip ${marketFilter.league === l ? "on" : ""}" data-mleague="${esc(l)}">${esc(l)}</button>`).join("")}
       </div>
-      ${list.length ? `
+      ${!list.length ? '<p class="empty">Niemand gefunden.</p>' : marketFilter.view === "cards" ? `
+      <div class="cardgrid">
+        ${list.map(p => {
+          const locked = p.kickoff && p.kickoff <= now;
+          const mine = state.league.me.slots[p.role];
+          const owned = mine && mine.playerId === p.id;
+          return cardHtml(p, {
+            pts: p.season, ptsLabel: "Saison", price: p.price,
+            locked, owned,
+            tag: owned ? "Im Kader" : locked ? "Gesperrt" : "",
+            sub: `${ROLE_LABEL[p.role] || p.role} · ${p.code || p.team}`
+              + (locked ? "" : p.kickoff
+                  ? ` · ${whenShort(p.kickoff)}${p.opponent ? " gegen " + p.opponent : ""}`
+                  : " · kein Spiel"),
+            action: `<button class="card-hit" data-market="${esc(p.id)}" data-role="${esc(p.role)}"
+                       ${locked ? "disabled" : ""}
+                       aria-label="${esc(p.name)} wählen"></button>`,
+          });
+        }).join("")}
+      </div>` : `
       <div class="tscroll">
         <table class="tbl market">
           <thead><tr><th>Spieler</th>${head}</tr></thead>
@@ -767,8 +904,7 @@ function marketPanelHtml() {
         <span class="cs">Creep Score</span>, <span class="w">Siege</span>.
         Die Zahlen darunter sind der Schnitt je Spiel.</p>
       ${matching.length > list.length ? `<p class="sub">${matching.length - list.length}
-        weitere - grenze die Suche ein.</p>` : ""}`
-      : '<p class="empty">Niemand gefunden.</p>'}
+        weitere - grenze die Suche ein.</p>` : ""}`}
     </div>`;
 }
 
@@ -841,6 +977,7 @@ function wireLeague() {
     render();
   });
 
+  paintHues(app);
   paintSourceBars(app);
 
   // Budgetbalken: Breite als CSS-Variable, damit kein Inline-Style nötig ist.
@@ -873,6 +1010,12 @@ function wireLeague() {
     const again = document.getElementById("market-q");
     if (again) { again.focus(); again.setSelectionRange(pos, pos); }
   });
+
+  app.querySelectorAll("[data-mview]").forEach(btn =>
+    btn.addEventListener("click", () => {
+      marketFilter.view = btn.getAttribute("data-mview");
+      renderLeague();
+    }));
 
   app.querySelectorAll("[data-mrole]").forEach(btn =>
     btn.addEventListener("click", () => { marketFilter.role = btn.getAttribute("data-mrole"); renderLeague(); }));
@@ -980,24 +1123,23 @@ function renderPicker() {
        Tausche zuerst auf einem anderen Platz jemanden Günstigeren ein.</div>`
     : "";
 
-  list.innerHTML = hint + (rows.length ? rows.map(p => {
+  list.innerHTML = hint + (rows.length ? `<div class="cardgrid">` + rows.map(p => {
     const off = p.locked || p.tooDear;
     const why = p.locked ? "Team hat gespielt"
       : p.tooDear ? "zu teuer"
       : p.kickoff ? whenShort(p.kickoff) + (p.opponent ? " gegen " + p.opponent : "")
       : "kein Spiel";
-    return `
-      <button class="prow ${off ? "off" : ""} ${p.id === current ? "on" : ""}"
-              data-pid="${esc(p.id)}" ${off ? "disabled" : ""}>
-        ${avatar(p)}
-        <span class="pmeta"><span class="pname">${esc(p.name)}</span>
-          <span class="line2">${esc(p.code || p.team)} · ${esc(p.league || "")} · ${esc(why)}</span>
-          ${sourcesHtml(p)}</span>
-        <span class="num">Ø ${num(p.avg)}<br><span class="sub">${p.games} Sp.</span></span>
-        <span class="num"><b>${num(p.price)}</b></span>
-      </button>`;
-  }).join("") : '<p class="empty">Niemand gefunden.</p>');
+    return cardHtml(p, {
+      pts: p.season, ptsLabel: "Saison", price: p.price,
+      locked: off, owned: p.id === current,
+      tag: p.id === current ? "Im Kader" : p.tooDear ? "Zu teuer" : p.locked ? "Gesperrt" : "",
+      sub: `${p.code || p.team} · ${why}`,
+      action: `<button class="card-hit" data-pid="${esc(p.id)}" ${off ? "disabled" : ""}
+                 aria-label="${esc(p.name)} wählen"></button>`,
+    });
+  }).join("") + `</div>` : '<p class="empty">Niemand gefunden.</p>');
 
+  paintHues(list);
   paintSourceBars(list);
 
   list.querySelectorAll("[data-pid]").forEach(btn =>

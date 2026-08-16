@@ -102,7 +102,8 @@ export async function handleIngest(request, env) {
       await bulk(env, "players",
         ["id", "name", "role", "team_id", "team", "code", "league", "image", "active",
           "season_pts", "season_games", "season_avg",
-          "season_k", "season_d", "season_a", "season_cs", "season_wins"],
+          "season_k", "season_d", "season_a", "season_cs", "season_wins",
+          "team_image", "full_name"],
         rows.map(r => ({
           id: str(r.id, 64), name: str(r.name, 80) || "?", role: str(r.role, 16) || "mid",
           team_id: str(r.teamId, 64), team: str(r.team, 80), code: str(r.code, 16),
@@ -111,6 +112,7 @@ export async function handleIngest(request, env) {
           season_avg: num(r.seasonAvg),
           season_k: num(r.seasonK), season_d: num(r.seasonD), season_a: num(r.seasonA),
           season_cs: num(r.seasonCs), season_wins: num(r.seasonWins),
+          team_image: str(r.teamImage, 400), full_name: str(r.fullName, 80),
         })).filter(r => r.id));
       break;
     }
@@ -163,6 +165,12 @@ export async function handleIngest(request, env) {
           round_key: str(r.roundKey, 16), team_id: str(r.teamId, 64), first_start: num(r.firstStart),
           opponent: str(r.opponent, 40), opponent_id: str(r.opponentId, 64),
         })).filter(r => r.round_key && r.team_id));
+      break;
+    }
+    case "leagues": {
+      await bulk(env, "esport_leagues", ["name", "image"],
+        rows.map(r => ({ name: str(r.name, 32), image: str(r.image, 400) }))
+          .filter(r => r.name));
       break;
     }
     case "done": {

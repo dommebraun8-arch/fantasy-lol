@@ -47,7 +47,32 @@ rechts. Antippen wählt den Spieler für diese Position.
 Die Karte ist selbst gezeichnet (ein SVG in `riftMapSvg()`), nicht Riots
 Artwork: ein Bild müsste nachgeladen werden, wäre nicht meins und ließe sich
 nicht mit den Farben der Seite einfärben. Ein SVG kostet nichts und bleibt bei
-jeder Größe scharf.
+jeder Größe scharf. Dasselbe gilt für die fünf Rollenzeichen im Sprite ganz
+oben in `index.html`.
+
+### Spielerkarten
+
+Jeder Spieler ist eine Sammelkarte, in drei Größen und immer aus derselben
+Funktion (`cardHtml`): klein auf der Kluft, mittel im Markt und im
+Auswahlfenster. Vier Zonen von oben nach unten - Ligawappen und Vereinswappen,
+Gesicht, Name mit Rollenzeichen, und unten die zwei Zahlen, um die es beim
+Aufstellen geht: was er kostet und was er bringt.
+
+**Jede Mannschaft trägt einen eigenen Farbton**, gerechnet aus ihrem Kürzel
+(`teamHue`). Vereinsfarben liefert die API nicht, und eine Liste von Hand
+veraltet mit jedem Kaderwechsel. Der Zweck ist ohnehin ein anderer als
+Markentreue: fünf Farben im Kader heißt fünf Vereine, zwei gleiche heißt zwei
+Spieler, die am selben Tag gesperrt sind. Echte Vereinsfarben täten das nicht -
+die halbe LEC spielt in Rot.
+
+Zustände haben je eine eigene *Form*, nicht nur eine andere Farbe, weil Farbe
+allein bei Sonne auf dem Handy untergeht: Kapitän goldenes Siegel und
+„Punkte ×2", im Kader goldener Rand und Band, gesperrt entsättigt mit
+Schraffur, frei gestrichelt mit dem Rollenzeichen.
+
+Zwei Klassennamen sind hier heikel und deshalb bewusst getrennt: `.card` ist
+die Fläche einer Seitensektion, `.pcard` die Spielerkarte. Beide `.card` zu
+nennen hat im Bau jede Sektion der App zu einer 3:4-Karte gemacht.
 
 Unter der Karte steht, **wann und gegen wen** jeder deiner Spieler antritt -
 auf den Marken selbst wäre dafür kein Platz, und untereinander liest man die
@@ -280,6 +305,11 @@ einzelner Platz und der Rest wäre weg.
   nächste Durchgang.
 - **Welche Matches:** `getSchedule` plus `getCompletedEvents` je Turnier der
   laufenden Saison.
+- **Wappen:** Vereinswappen aus `getTeams`, Ligawappen aus `getLeagues`. Die
+  Ligawappen stehen in einer eigenen Tabelle `esport_leagues` - **nicht**
+  `leagues`, denn so heißen schon die Fantasy-Ligen der Nutzer. Ein
+  `CREATE TABLE IF NOT EXISTS leagues` wäre stillschweigend wirkungslos
+  geblieben und erst beim Einspielen mit „no such column" aufgefallen.
 - **Anpfiffe und Gegner:** `getSchedule`, erster Anpfiff jedes Teams in
   der laufenden und der kommenden Runde. Der Gegner steht im selben Eintrag und
   kostet keine zusätzliche Anfrage. Achtung: der Spielplan liefert für

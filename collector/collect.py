@@ -680,6 +680,7 @@ def empty_data():
         "prices": {},
         "priceBase": {},
         "fixtures": {},
+        "leagues": {},
         "lines": [],
         "processed": [],
         "doneMatches": [],
@@ -707,7 +708,8 @@ def load_data():
         return empty_data()
     base = empty_data()
     base.update({k: data.get(k, base[k]) for k in base})
-    for key in ("players", "rounds", "prices", "priceBase", "fixtures", "failedMatches"):
+    for key in ("players", "rounds", "prices", "priceBase", "fixtures", "leagues",
+                "failedMatches"):
         if not isinstance(base[key], dict):
             base[key] = {}
     for key in ("lines", "processed", "doneMatches"):
@@ -848,6 +850,22 @@ def season_totals(data, now):
 
 # ---------------------------------------------------------------- Spielplan
 
+def collect_leagues():
+    """Name und Wappen der Fantasy-Ligen.
+
+    Vier Zeilen, einmal je Lauf. `getLeagues` liefert das Wappen ohnehin mit -
+    der Sammler hat bisher nur id und name daraus gelesen.
+    """
+    data = api("getLeagues")
+    if not data:
+        return {}
+    out = {}
+    for l in data.get("data", {}).get("leagues", []) or []:
+        if l.get("name") in FANTASY_LEAGUES:
+            out[l["name"]] = l.get("image") or ""
+    return out
+
+
 def collect_fixtures(now, index=None):
     """Erster Anpfiff jedes Teams, je Runde - samt Gegner.
 
@@ -957,6 +975,7 @@ def push(out):
         "id": pid, "name": p.get("name"), "role": p.get("role"),
         "teamId": p.get("teamId"), "team": p.get("team"), "code": p.get("code"),
         "league": p.get("league"), "image": p.get("image"),
+        "teamImage": p.get("teamImage", ""), "fullName": p.get("full", ""),
         "seasonPts": p.get("pts", 0), "seasonGames": p.get("games", 0),
         "seasonAvg": p.get("avg", 0),
         "seasonK": p.get("k", 0), "seasonD": p.get("d", 0), "seasonA": p.get("a", 0),
@@ -995,6 +1014,9 @@ def push(out):
          "opponent": e.get("o", ""), "opponentId": e.get("oid", "")}
         for k in fixture_rounds for tid, e in out["fixtures"][k].items()
     ], replaceRounds=fixture_rounds)
+
+    send("leagues", [{"name": name, "image": image}
+                     for name, image in sorted((out.get("leagues") or {}).items())])
 
     send("done", [], scoring=SCORING)
 
@@ -1166,6 +1188,8 @@ def main(dry_run=False):
     # Sortiert schreiben, damit der Diff im Repo lesbar bleibt.
     data["lines"].sort(key=lambda l: (l.get("t", ""), l.get("g", ""), l.get("p", "")))
 
+    data["leagues"] = collect_leagues() or data.get("leagues") or {}
+
     print("Spielplan für die Sperren holen…")
     data["fixtures"] = collect_fixtures(now, team_index)
     print(f"  {sum(len(v) for v in data['fixtures'].values())} Anpfiffe in "
@@ -1211,6 +1235,7 @@ def main(dry_run=False):
         "prices": data["prices"],
         "priceBase": data["priceBase"],
         "fixtures": data["fixtures"],
+        "leagues": data["leagues"],
         "lines": data["lines"],
         "processed": data["processed"],
         "doneMatches": data["doneMatches"],

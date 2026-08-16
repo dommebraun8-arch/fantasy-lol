@@ -71,31 +71,45 @@ check("Beitritt per Code fuehrt in dieselbe Liga",
 check("Gast sieht keinen Einladungscode", await b.page.locator(".code").count() === 0);
 
 console.log("\n== Kader zusammenstellen ==");
-async function pickCheapest(page, role) {
+/** Preis aus der Fussleiste einer Karte. */
+const cardPrice = card => card.locator(".foot .price .v").innerText().then(parseFloat);
+
+/**
+ * Waehlbar sind die Karten ohne .locked - die Klasse traegt beides, gesperrt
+ * und zu teuer, weil beides denselben Zustand hat: nicht anklickbar.
+ */
+async function pickBy(page, role, better) {
   await page.click(`[data-pick="${role}"]`);
-  await page.waitForSelector("#sheet.open .prow");
-  const rows = page.locator("#sheet .prow:not(.off)");
-  const n = await rows.count();
-  let idx = -1, best = Infinity;
+  await page.waitForSelector("#sheet.open .pcard");
+  const cards = page.locator("#sheet .pcard:not(.locked)");
+  const n = await cards.count();
+  let idx = -1, best = null;
   for (let i = 0; i < n; i++) {
-    const price = parseFloat(await rows.nth(i).locator(".num b").innerText());
-    if (price < best) { best = price; idx = i; }
+    const price = await cardPrice(cards.nth(i));
+    if (best === null || better(price, best)) { best = price; idx = i; }
   }
   if (idx < 0) return false;
-  await rows.nth(idx).click();
+  await cards.nth(idx).locator("[data-pid]").click();
   await page.waitForSelector("#sheet.open", { state: "detached", timeout: 5000 });
   await page.waitForTimeout(150);
   return true;
 }
 
+const pickCheapest = (page, role) => pickBy(page, role, (a, b) => a < b);
+const pickDearest = (page, role) => pickBy(page, role, (a, b) => a > b);
+
 await a.page.click('[data-pick="mid"]');
-await a.page.waitForSelector("#sheet.open .prow");
+await a.page.waitForSelector("#sheet.open .pcard");
 check("Auswahl zeigt nur Midlaner",
-  (await a.page.locator("#sheet .prow").count()) === 4, await a.page.locator("#sheet .prow").count());
-const lockedRow = a.page.locator("#sheet .prow.off").first();
+  (await a.page.locator("#sheet .pcard").count()) === 4, await a.page.locator("#sheet .pcard").count());
+const lockedCard = a.page.locator("#sheet .pcard.locked").first();
 check("Gesperrtes Team ist nicht waehlbar",
-  (await lockedRow.count()) === 1 && (await lockedRow.innerText()).includes("gespielt"),
-  await lockedRow.innerText().catch(() => "keine"));
+  (await lockedCard.count()) === 1 && /gespielt/i.test(await lockedCard.innerText()),
+  await lockedCard.innerText().catch(() => "keine"));
+check("Jede Karte traegt ihr Rollenzeichen",
+  await a.page.locator("#sheet .pcard .plate .role-ico").count() === 4);
+check("Und ein Wappen oder Kuerzel",
+  await a.page.locator("#sheet .pcard .crest").count() === 4);
 check("Restbudget steht im Kopf",
   /Noch\s+35\.0\s+von\s+35\.0/.test((await a.page.locator("#sheet-sub").innerText()).replace(/\s+/g, " ")),
   await a.page.locator("#sheet-sub").innerText());
@@ -114,7 +128,7 @@ check("Kein Hinweis auf freie Plaetze mehr",
 console.log("\n== Kapitaen ==");
 await a.page.click('[data-cap="mid"]');
 await a.page.waitForTimeout(300);
-check("Kapitaensplatz ist markiert", await a.page.locator(".spot.cap").count() === 1);
+check("Kapitaensplatz ist markiert", await a.page.locator(".spot .pcard.cap").count() === 1);
 check("Knopf zeigt den Zustand",
   await a.page.locator('[data-cap="mid"].on').count() === 1);
 check("Alle fuenf Lanes stehen auf der Karte",
@@ -123,17 +137,7 @@ await a.page.screenshot({ path: SHOTS + "/3-kader-voll.png", fullPage: true });
 
 console.log("\n== Budgetgrenze in der Oberflaeche ==");
 // Teuersten Midlaner holen, danach muessen andere Plaetze eng werden.
-await a.page.click('[data-pick="mid"]');
-await a.page.waitForSelector("#sheet.open .prow");
-const priced = a.page.locator("#sheet .prow:not(.off)");
-let maxIdx = -1, maxPrice = -1;
-for (let i = 0; i < await priced.count(); i++) {
-  const p = parseFloat(await priced.nth(i).locator(".num b").innerText());
-  if (p > maxPrice) { maxPrice = p; maxIdx = i; }
-}
-await priced.nth(maxIdx).click();
-await a.page.waitForSelector("#sheet.open", { state: "detached" });
-await a.page.waitForTimeout(200);
+check("Teuersten Midlaner waehlen", await pickDearest(a.page, "mid"));
 const cost2 = parseFloat((await a.page.locator(".budget .num").innerText()).split("/")[0]);
 check("Teurerer Spieler erhoeht die Kosten", cost2 > cost, { cost, cost2 });
 check("Budget bleibt eingehalten", cost2 <= 35, cost2);
@@ -184,15 +188,29 @@ console.log("\n== Markt ==");
 await a.page.click('#tabs [data-tab="market"]');
 await a.page.waitForSelector("#market-q");
 check("Markt listet Spieler", await a.page.locator("[data-market]").count() >= 15);
+check("Und zeigt sie als Karten", await a.page.locator("#app .cardgrid .pcard").count() >= 15);
+// Die Karten schreiben Rolle und Team in Grossbuchstaben - deshalb ohne
+// Ruecksicht auf Gross- und Kleinschreibung vergleichen.
+const cardTexts = () => a.page.locator("#app .cardgrid .pcard").allInnerTexts()
+  .then(ts => ts.map(t => t.toLowerCase()));
 await a.page.click('[data-mrole="support"]');
 await a.page.waitForTimeout(200);
-const roleRows = await a.page.locator("[data-market]").allInnerTexts();
-check("Rollenfilter greift", roleRows.every(t => t.includes("Support")), roleRows.slice(0, 2));
+const roleCards = await cardTexts();
+check("Rollenfilter greift", roleCards.length > 0 && roleCards.every(t => t.includes("support")),
+  roleCards.slice(0, 2));
 await a.page.fill("#market-q", "SOO");
 await a.page.waitForTimeout(200);
-check("Suche greift", (await a.page.locator("[data-market]").allInnerTexts()).every(t => t.includes("SOO")));
+check("Suche greift", (await cardTexts()).every(t => t.includes("soo")));
 check("Suchfeld behaelt den Fokus",
   await a.page.evaluate(() => document.activeElement && document.activeElement.id) === "market-q");
+await a.page.screenshot({ path: SHOTS + "/6-markt-karten.png", fullPage: true });
+
+// Zum Vergleichen vieler Spieler taugt die Tabelle besser - deshalb der
+// Umschalter. Ab hier wird sie geprueft.
+await a.page.click('[data-mview="table"]');
+await a.page.waitForSelector("table.market");
+check("Umschalter bringt die Tabelle zurueck",
+  await a.page.locator("#app .cardgrid").count() === 0);
 
 // Sortieren: die Preisspalte muss auf- und absteigend wirklich umsortieren.
 await a.page.click('[data-mrole=""]');
@@ -218,6 +236,10 @@ const pickedCol = await a.page.locator("table.market tbody tr")
 check("Nach Gewaehlt sortiert stehen die beliebtesten oben",
   pickedCol[0] > 0 && pickedCol.every((v, i) => i === 0 || pickedCol[i - 1] >= v), pickedCol.slice(0, 5));
 await a.page.screenshot({ path: SHOTS + "/6-markt.png", fullPage: true });
+
+await a.page.click('[data-mview="cards"]');
+await a.page.waitForSelector("#app .cardgrid");
+check("Und zurueck zu den Karten", await a.page.locator("table.market").count() === 0);
 
 console.log("\n== Rechenweg der Punkte ==");
 // Der einzige Spieler mit echten Spielzeilen im Testbestand ist SOO-mid.
@@ -266,7 +288,7 @@ console.log("\n== Sitzung ueberdauert das Neuladen ==");
 await a.page.reload({ waitUntil: "domcontentloaded" });
 await a.page.waitForSelector(".spot");
 check("Nach dem Neuladen ist man noch angemeldet", await a.page.locator(".spot").count() === 5);
-check("Kader ist noch da", await a.page.locator(".spot.cap").count() === 1);
+check("Kader ist noch da", await a.page.locator(".spot .pcard.cap").count() === 1);
 
 console.log("\n== Abmelden ==");
 await a.page.click("#switch-league");
@@ -286,6 +308,13 @@ check("Kein waagerechtes Scrollen am Telefon", overflow <= 1, overflow);
 // Am Telefon darf davon aber nichts abgeschnitten sein, sonst sieht man die
 // interessanteste Spalte ("Gewählt") nie.
 await b.page.click('#tabs [data-tab="market"]');
+await b.page.waitForSelector("#app .cardgrid");
+const gridFits = await b.page.evaluate(() => {
+  const g = document.querySelector("#app .cardgrid");
+  return g.scrollWidth - g.clientWidth;
+});
+check("Kartenraster passt aufs Telefon", gridFits <= 1, gridFits);
+await b.page.click('[data-mview="table"]');
 await b.page.waitForSelector("table.market");
 const cut = await b.page.evaluate(() => {
   const t = document.querySelector("table.market");
@@ -331,10 +360,13 @@ await wide.goto(BASE);
 await wide.waitForSelector(".spot");
 await wide.screenshot({ path: SHOTS + "/7-desktop-kader.png", fullPage: true });
 await wide.click('#tabs [data-tab="market"]');
+await wide.waitForSelector("#app .cardgrid");
+await wide.screenshot({ path: SHOTS + "/7b-desktop-markt.png", fullPage: true });
+await wide.click('[data-mview="table"]');
 await wide.waitForSelector("table.market");
 check("Am Schreibtisch steht auch der Schnitt in der Tabelle",
   await wide.locator("table.market thead th.opt:visible").count() === 1);
-await wide.screenshot({ path: SHOTS + "/7b-desktop-markt.png", fullPage: true });
+await wide.screenshot({ path: SHOTS + "/7c-desktop-tabelle.png", fullPage: true });
 const wideOverflow = await wide.evaluate(() =>
   document.documentElement.scrollWidth - document.documentElement.clientWidth);
 check("Kein waagerechtes Scrollen am Schreibtisch", wideOverflow <= 1, wideOverflow);
@@ -358,7 +390,7 @@ check("Ohne Anmeldung ist die Leiste nicht da",
 check("Version steht auf der Seite",
   /^v\d{4}\.\d{2}\.\d{2}/.test((await wp.locator("#build").innerText()).trim()),
   await wp.locator("#build").innerText());
-await wp.screenshot({ path: SHOTS + "/7c-desktop-login.png" });
+await wp.screenshot({ path: SHOTS + "/7d-desktop-login.png" });
 
 console.log("\n== Fehlerfreiheit ==");
 check("Keine JS-Fehler bei A", a.errors.length === 0, a.errors);

@@ -62,6 +62,14 @@ async function fixtureTable(env, roundKey) {
   return map;
 }
 
+/** Wappen je Liga. Vier Zeilen, deshalb am Stueck statt je Spieler. */
+async function leagueCrests(env) {
+  const rows = await env.DB.prepare("SELECT name, image FROM esport_leagues").all();
+  const out = {};
+  for (const r of rows.results) if (r.image) out[r.name] = r.image;
+  return out;
+}
+
 /** Anpfiff und Gegner eines Teams - beides null/leer, wenn nichts ansteht. */
 function fixtureOf(fixtures, teamId) {
   const f = teamId ? fixtures.get(teamId) : null;
@@ -102,7 +110,8 @@ async function playerMap(env, ids) {
   if (!ids.length) return new Map();
   const marks = ids.map(() => "?").join(",");
   const rows = await env.DB.prepare(
-    `SELECT id, name, role, team_id, team, code, league, image, active
+    `SELECT id, name, role, team_id, team, code, league, image, active,
+            team_image, full_name
        FROM players WHERE id IN (${marks})`
   ).bind(...ids).all();
   const map = new Map();
@@ -305,6 +314,7 @@ export async function handleLeagueView(env, user, leagueId, wantRound) {
         name: p ? p.name : "Unbekannt",
         team: p ? p.team : "", code: p ? p.code : "", league: p ? p.league : "",
         image: p ? p.image : "",
+        teamImage: p ? (p.team_image || "") : "", fullName: p ? (p.full_name || "") : "",
         paid: slot.paid,
         price: prices.get(slot.playerId) ?? null,
         pts: round1(stat.pts), games: stat.games,
@@ -335,6 +345,7 @@ export async function handleLeagueView(env, user, leagueId, wantRound) {
 
   return json({
     scoring: await scoringRules(env),
+    leagueCrests: await leagueCrests(env),
     league: {
       id: league.id, name: league.name, budget: league.budget,
       inviteCode: league.owner_id === user.id ? league.invite_code : null,
@@ -491,6 +502,7 @@ export async function handleMarket(env, user, leagueId) {
     `SELECT p.id, p.name, p.role, p.team_id, p.team, p.code, p.league, p.image,
             p.season_pts, p.season_games, p.season_avg,
             p.season_k, p.season_d, p.season_a, p.season_cs, p.season_wins,
+            p.team_image, p.full_name,
             COALESCE(pr.pts, 0) AS round_pts
        FROM players p
        LEFT JOIN player_round pr ON pr.player_id = p.id AND pr.round_key = ?
@@ -502,9 +514,11 @@ export async function handleMarket(env, user, leagueId) {
     round: current,
     members: memberCount,
     scoring: await scoringRules(env),
+    leagueCrests: await leagueCrests(env),
     players: rows.results.map(r => ({
       id: r.id, name: r.name, role: r.role, team: r.team, code: r.code,
       league: r.league, image: r.image,
+      teamImage: r.team_image || "", fullName: r.full_name || "",
       price: prices.get(r.id) ?? DEFAULT_PRICE,
       avg: r.season_avg, games: r.season_games, season: r.season_pts,
       roundPts: round1(r.round_pts),

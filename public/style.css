@@ -306,7 +306,10 @@ nav.tabs button.on .ic { opacity: 1; color: var(--accent); }
    könnte den Jungler nicht zwischen die Lanes setzen. */
 .rift {
   position: relative;
-  aspect-ratio: 1 / 1;
+  /* Leicht hochkant statt quadratisch: die Plaetze sind Karten im Format 3:4,
+     und drei Reihen davon passen in ein Quadrat nicht ohne Ueberlappung. Die
+     15 Prozent Streckung sieht man der Karte kaum an, das Gedraenge schon. */
+  aspect-ratio: 1 / 1.15;
   width: 100%;
   margin-bottom: var(--s3);
   border-radius: 22px;
@@ -334,72 +337,189 @@ nav.tabs button.on .ic { opacity: 1; color: var(--accent); }
 /* Prozentwerte, nicht Pixel: die Plätze wachsen mit der Karte. Die Werte
    folgen der echten Aufstellung - Top oben links, der Jungler dazwischen,
    Mid in der Mitte, Botlane unten rechts - und sind so gesetzt, dass sich
-   auch bei der grössten Karte nichts überlappt. */
-.spot-top     { left: 3%;  top: 3%; }
-.spot-jungle  { left: 4%;  top: 37%; }
-.spot-mid     { left: 36%; top: 35%; }
-.spot-support { left: 30%; top: 69%; }
-.spot-bottom  { left: 66%; top: 61%; }
+   auch bei der größten Karte nichts überlappt. */
+.spot-top     { left: 2%;  top: 2%; }
+.spot-jungle  { left: 3%;  top: 34%; }
+.spot-mid     { left: 37%; top: 32%; }
+.spot-support { left: 31%; top: 66%; }
+.spot-bottom  { left: 70%; top: 58%; }
 
-/* Eine Marke, kein Steckbrief: Rolle, Bild, Name, Punkte. Preis, Anpfiff und
-   Gegner stehen in der Liste unter der Karte - hier wäre dafür kein Platz,
-   und die Karte soll lesbar bleiben. */
-.spot {
-  position: absolute; z-index: 1; width: 27%; min-width: 74px; max-width: 116px;
-  display: flex; flex-direction: column; align-items: center; gap: 2px;
-  padding: 5px 5px 6px;
+.spot { position: absolute; z-index: 1; width: 25%; min-width: 70px; max-width: 112px; }
+/* Die ganze Karte ist der Knopf zum Tauschen. Als eigene Fläche darüber statt
+   als <button> um die Karte herum: sonst läge der Kapitänsknopf in einem
+   anderen Knopf, und das ist ungültiges Markup. */
+.spot-hit, .card-hit {
+  position: absolute; inset: 0; z-index: 6;
+  background: none; border: none; padding: 0; border-radius: inherit;
+}
+.spot-hit[disabled], .card-hit[disabled] { cursor: default; }
+
+/* =========================================================================
+   Die Spielerkarte
+
+   Vier Zonen von oben nach unten: Herkunft, Gesicht, Name, Zahlen. Dieselbe
+   Gestaltung in drei Größen - klein auf der Kluft, mittel im Markt, groß in
+   der Auswahl -, damit ein Spieler überall wiedererkennbar ist.
+
+   Der Farbton kommt aus dem Kürzel der Mannschaft (siehe teamHue in app.js)
+   und steckt in --hue. Das macht einen Kader auf einen Blick lesbar: fünf
+   Farben heißt fünf Vereine.
+   ========================================================================= */
+
+.pcard {
+  --tint-dim: hsl(var(--hue, 30) 46% 22%);
+  position: relative;
+  aspect-ratio: 3 / 4;
   border-radius: var(--r-md);
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0) 46%),
-    rgba(8, 10, 13, 0.78);
-  border: 1px solid var(--line);
+  overflow: hidden;
+  display: flex; flex-direction: column;
+  border: 1px solid var(--line-strong);
   border-top-color: var(--line-strong);
   box-shadow: var(--shadow-2);
-  backdrop-filter: blur(3px);
-  -webkit-backdrop-filter: blur(3px);
-}
-.spot.cap {
-  border-color: var(--accent-line);
   background:
-    linear-gradient(180deg, rgba(224, 171, 90, 0.2), rgba(224, 171, 90, 0.06) 60%),
-    rgba(8, 10, 13, 0.78);
+    radial-gradient(78% 52% at 50% 34%, hsl(var(--hue, 30) 78% 46% / 0.6), transparent 72%),
+    repeating-linear-gradient(46deg,
+      rgba(255, 255, 255, 0.035) 0 2px, transparent 2px 13px),
+    linear-gradient(168deg, var(--tint-dim), #0a0c10 78%);
 }
-.spot.locked { opacity: 0.7; }
-.spot.empty { border-style: dashed; }
 
-.spot-role {
-  max-width: 100%; font-size: 0.5rem; letter-spacing: 0.06em;
-  color: var(--text-dim); font-weight: 800; text-transform: uppercase;
+/* Kopfzeile: Ligawappen links, Vereinswappen rechts. Beide in einem festen
+   Rahmen - die Logos sind mal breit, mal quadratisch, mal hell, mal dunkel,
+   und ohne Rahmen wackelt die Kopfzeile von Karte zu Karte. */
+.card-top {
+  position: relative; z-index: 3;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 6px 7px 0; gap: var(--s1);
+}
+.crest {
+  width: 24px; height: 24px; border-radius: 7px; flex: none;
+  display: grid; place-items: center; overflow: hidden;
+  background: rgba(4, 6, 9, 0.55);
+  border: 1px solid hsl(var(--hue, 30) 80% 62% / 0.4);
+}
+.crest img { width: 17px; height: 17px; object-fit: contain; display: block; }
+.crest .fb {
+  font-family: var(--mono); font-size: 0.5rem; font-weight: 800; color: #fff;
+}
+.leaguemark {
+  height: 18px; min-width: 18px; max-width: 56px; padding: 0 4px;
+  border-radius: 5px; flex: none;
+  display: grid; place-items: center; overflow: hidden;
+  background: rgba(4, 6, 9, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+/* width:auto wäre hier eine Falle: ein Bild ohne bekannte Maße kann die
+   Kopfzeile sprengen. Deshalb Höhe fest, Breite gedeckelt. */
+.leaguemark img { height: 12px; width: auto; max-width: 46px; object-fit: contain; display: block; }
+.leaguemark .fb {
+  font-family: var(--mono); font-size: 0.5rem; font-weight: 800;
+  letter-spacing: 0.08em; color: rgba(255, 255, 255, 0.78);
+}
+
+/* Das Foto sitzt unten bündig und blendet nach unten weg, damit der Name
+   darauf steht statt daneben. */
+img.portrait {
+  position: absolute; left: 0; right: 0; bottom: 0; top: 20px;
+  width: 100%; height: auto; object-fit: cover; object-position: top center;
+  z-index: 1; -webkit-mask-image: linear-gradient(180deg, #000 52%, transparent 92%);
+  mask-image: linear-gradient(180deg, #000 52%, transparent 92%);
+}
+/* Ohne Foto: Monogramm im Farbton der Mannschaft. Bleibt eine Karte, statt
+   zu einem Platzhalter zu werden. */
+.mono-face {
+  position: absolute; inset: 20px 0 30%; z-index: 1;
+  display: grid; place-items: center;
+  font-weight: 800; letter-spacing: -0.06em; font-size: 2.6rem;
+  color: hsl(var(--hue, 30) 40% 76% / 0.22);
+}
+
+.plate { position: relative; z-index: 3; margin-top: auto; padding: 0 7px 5px; }
+.plate .name {
+  display: block; font-weight: 820; line-height: 1;
+  letter-spacing: -0.035em; text-transform: uppercase; color: #fff;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.7);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  font-size: 0.8125rem;
 }
-.spot.cap .spot-role { color: var(--accent); }
+.plate .sub {
+  display: flex; align-items: center; gap: 4px; margin-top: 2px;
+  font-family: var(--mono); font-size: 0.5rem; letter-spacing: 0.06em;
+  text-transform: uppercase; color: rgba(255, 255, 255, 0.66);
+  white-space: nowrap; overflow: hidden;
+}
+.plate .sub .role-ico { color: hsl(var(--hue, 30) 70% 76%); }
 
-.spot-main {
-  display: flex; flex-direction: column; align-items: center; gap: 2px;
-  width: 100%; min-width: 0; padding: 0;
-  background: none; border: none; color: var(--text); text-align: center;
-}
-.spot-main[disabled] { cursor: default; }
-.spot-main .avatar { width: 34px; height: 34px; }
-.spot.empty .spot-main .avatar { color: var(--accent); border-style: dashed; }
-.spot-name {
-  display: block; max-width: 100%; font-weight: 650; font-size: 0.6875rem;
-  line-height: 1.15; letter-spacing: -0.01em;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-/* Team und Preis nur, wo die Marke gross genug dafuer ist. */
-.spot-sub { display: none; }
+.role-ico { width: 11px; height: 11px; flex: none; }
+.role-big { width: 26px; height: 26px; color: var(--accent); opacity: 0.8; }
 
-.spot-pts {
-  font-family: var(--mono); font-weight: 740; font-size: 0.8125rem;
-  letter-spacing: -0.03em; color: var(--accent); font-variant-numeric: tabular-nums;
-  line-height: 1.1;
+.foot {
+  position: relative; z-index: 3;
+  display: flex; align-items: baseline; justify-content: space-between;
+  padding: 4px 7px 5px; gap: var(--s1);
+  background: rgba(4, 6, 9, 0.72);
+  border-top: 1px solid hsl(var(--hue, 30) 70% 60% / 0.28);
 }
-.spot-pts.zero { color: var(--text-dim); font-weight: 500; }
+.foot .k {
+  display: none; font-family: var(--mono); font-size: 0.4375rem;
+  letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-dim);
+}
+.foot .v {
+  font-family: var(--mono); font-size: 0.8125rem; font-weight: 740;
+  letter-spacing: -0.03em; font-variant-numeric: tabular-nums; color: #fff;
+}
+.foot .pts { text-align: right; }
+.foot .pts .v { color: var(--accent); }
 
+/* ---- Zustände ---- */
+
+.pcard.cap { border-color: var(--accent-line); }
+.pcard.cap .foot { border-top-color: var(--accent-line); }
+.seal {
+  position: absolute; z-index: 4; top: 5px; left: 50%; transform: translateX(-50%);
+  width: 17px; height: 17px; border-radius: 50%;
+  display: grid; place-items: center;
+  font-size: 0.5rem; font-weight: 800; color: var(--accent-ink);
+  background: linear-gradient(180deg, #eec27c, var(--accent));
+  box-shadow: 0 0 0 2px rgba(224, 171, 90, 0.2);
+}
+.pcard.owned { border-color: var(--accent-line); }
+.tag {
+  position: absolute; z-index: 4; top: 26px; left: 50%; transform: translateX(-50%);
+  font-family: var(--mono); font-size: 0.4375rem; letter-spacing: 0.1em;
+  text-transform: uppercase; font-weight: 700;
+  padding: 2px 6px; border-radius: 100px; white-space: nowrap;
+  background: var(--accent); color: var(--accent-ink);
+}
+.pcard.locked { filter: saturate(0.25); }
+.pcard.locked::after {
+  content: ""; position: absolute; inset: 0; z-index: 5; pointer-events: none;
+  background: repeating-linear-gradient(46deg,
+    rgba(0, 0, 0, 0.34) 0 6px, transparent 6px 16px);
+}
+.pcard.locked .tag { background: var(--live); color: #fff; }
+
+.pcard.empty {
+  border-style: dashed; border-color: var(--line-strong);
+  background: linear-gradient(168deg, #12161d, #0a0c10 78%);
+  align-items: center; justify-content: center; gap: 3px;
+  width: 100%; color: var(--text-dim);
+}
+.pcard.empty .plus { font-size: 1.5rem; font-weight: 300; color: var(--accent); line-height: 1; }
+.pcard.empty .what {
+  font-family: var(--mono); font-size: 0.5rem; letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+/* Der Kapitänsknopf liegt über der Trefferfläche der Karte - innerhalb des
+   Randes, sonst schneidet ihn die Kluft am Bildrand ab. Die Fußleiste bekommt
+   dafür rechts Platz, damit er nicht auf der Punktzahl sitzt.
+   Auf der kleinen Karte ersetzt er das Kapitänssiegel: zwei "C" auf einer
+   Marke von 70 Pixeln sind eines zu viel. */
+.pcard.s .seal { display: none; }
+.pcard.s .foot { padding-right: 24px; }
 .spot-cap {
-  position: absolute; right: -6px; bottom: -6px;
-  width: 20px; height: 20px; border-radius: 50%; padding: 0;
+  position: absolute; z-index: 7; right: 3px; bottom: 3px;
+  width: 19px; height: 19px; border-radius: 50%; padding: 0;
   font-size: 0.625rem; font-weight: 800; line-height: 1;
   background: var(--mat-2); color: var(--text-dim); border: 1px solid var(--line-strong);
 }
@@ -409,18 +529,33 @@ nav.tabs button.on .ic { opacity: 1; color: var(--accent); }
 }
 .spot-cap[disabled] { opacity: 0.3; cursor: default; }
 
+/* Größere Karten im Markt und in der Auswahl: dort ist Platz für die
+   Beschriftungen in der Fußleiste und einen größeren Namen. */
+.cardgrid {
+  display: grid; gap: var(--s3);
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+}
+.cardgrid .pcard .foot .k { display: block; }
+.cardgrid .pcard .plate .name { font-size: 1rem; }
+.cardgrid .pcard .plate .sub { font-size: 0.5625rem; }
+.cardgrid .pcard .foot .v { font-size: 0.9375rem; }
+.cardgrid .pcard .mono-face { font-size: 3.4rem; }
+.cardgrid .pcard .card-top { padding: 8px 9px 0; }
+.cardgrid .pcard .plate { padding: 0 9px 6px; }
+.cardgrid .pcard .foot { padding: 6px 9px 7px; }
+.cardgrid .pcard .crest { width: 26px; height: 26px; }
+.cardgrid .pcard .role-ico { width: 12px; height: 12px; }
+
+.viewswitch { display: flex; gap: 4px; }
+
 @media (min-width: 560px) {
-  .spot { padding: var(--s2) var(--s2) 7px; }
-  .spot-main .avatar { width: 44px; height: 44px; }
-  .spot-role { font-size: 0.5625rem; letter-spacing: 0.1em; }
-  .spot-name { font-size: 0.8125rem; }
-  .spot-sub {
-    display: block; font-family: var(--mono); font-size: 0.5938rem;
-    color: var(--text-dim); max-width: 100%;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  }
-  .spot-pts { font-size: 0.9375rem; }
-  .spot-cap { width: 24px; height: 24px; font-size: 0.6875rem; }
+  .pcard.s .plate .name { font-size: 0.875rem; }
+  .pcard.s .mono-face { font-size: 3rem; }
+  .pcard.s .plate .sub { font-size: 0.5313rem; }
+  .pcard.s .foot .v { font-size: 0.875rem; }
+  .spot-cap { width: 22px; height: 22px; font-size: 0.6875rem; }
+  .pcard.s .foot { padding-right: 27px; }
+  .cardgrid { grid-template-columns: repeat(auto-fill, minmax(152px, 1fr)); }
 }
 
 /* Am Schreibtisch ist die Karte schnell riesig - eine quadratische Flaeche

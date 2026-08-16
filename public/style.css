@@ -178,6 +178,145 @@ button { cursor: pointer; -webkit-tap-highlight-color: transparent; touch-action
 .budget .num { font-family: var(--mono); font-size: 0.875rem; color: var(--text-2); white-space: nowrap; }
 .budget .num b { color: var(--text); }
 
+/* Die Zahl, um die es geht: Punkte gross im Kartenkopf. */
+.big-pts {
+  font-family: var(--mono); font-size: 1.75rem; font-weight: 700;
+  color: var(--score); line-height: 1; text-align: right; white-space: nowrap;
+}
+.big-pts span {
+  display: block; font-family: var(--sans); font-size: 0.625rem; font-weight: 600;
+  color: var(--dim); letter-spacing: 0.08em; text-transform: uppercase; margin-top: 4px;
+}
+
+/* ------------------------------------------------------------ Aufstellung
+ *
+ * Die fuenf Plaetze stehen diagonal wie die Lanes auf Summoner's Rift: Top
+ * oben links, Mid in der Mitte, Bot unten rechts. Am Handy ist das ein 3x3-
+ * Raster, in dem nur fuenf Felder belegt sind - die Diagonale entsteht also
+ * ohne absolute Positionierung und bleibt bei jeder Schriftgroesse heil.
+ */
+.rift {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  padding: 12px 10px;
+  margin-bottom: 12px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--line);
+  background:
+    radial-gradient(110% 80% at 12% 8%, rgba(139, 124, 246, 0.13), transparent 60%),
+    radial-gradient(110% 80% at 88% 92%, rgba(240, 184, 102, 0.11), transparent 60%),
+    var(--surface-2);
+  overflow: hidden;
+}
+/* Der Fluss laeuft quer durch die Karte - reine Deko, aber sie macht die
+   Diagonale sofort lesbar. */
+.rift .river {
+  position: absolute; inset: -20% -10%;
+  background: linear-gradient(46deg, transparent 47.6%, rgba(255, 255, 255, 0.055) 48%,
+    rgba(255, 255, 255, 0.055) 52%, transparent 52.4%);
+  pointer-events: none;
+}
+.spot-top     { grid-column: 1; grid-row: 1; }
+.spot-jungle  { grid-column: 2; grid-row: 1; }
+.spot-mid     { grid-column: 2; grid-row: 2; }
+.spot-support { grid-column: 2; grid-row: 3; }
+.spot-bottom  { grid-column: 3; grid-row: 3; }
+
+.spot {
+  position: relative; z-index: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: "role pts" "main main" "when cap";
+  align-items: center; gap: 4px;
+  padding: 9px 9px 7px;
+  border-radius: var(--r-md);
+  background: rgba(11, 13, 18, 0.66);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-1);
+}
+.spot.cap { border-color: var(--accent-line); background: rgba(139, 124, 246, 0.16); }
+.spot.locked { opacity: 0.72; }
+.spot.empty { border-style: dashed; }
+
+/* "SUPPORT" ist das laengste Label und teilt sich die Zeile mit der
+   Punktzahl - eng gesetzt und abgeschnitten, damit beide nie kollidieren. */
+.spot-role {
+  grid-area: role; min-width: 0; font-size: 0.5rem; letter-spacing: 0.06em;
+  color: var(--dim); font-weight: 800; text-transform: uppercase;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.spot.cap .spot-role { color: var(--accent); }
+.spot-pts {
+  grid-area: pts; font-family: var(--mono); font-weight: 700;
+  font-size: 0.9375rem; color: var(--score);
+}
+.spot-pts.zero { color: var(--dim); font-weight: 500; }
+
+.spot-main {
+  grid-area: main; display: flex; flex-direction: column; align-items: center;
+  gap: 4px; width: 100%; min-width: 0; padding: 4px 0 2px;
+  background: none; border: none; color: var(--text); text-align: center;
+  transition: transform 120ms var(--ease);
+}
+.spot-main:active:not([disabled]) { transform: scale(0.96); }
+.spot-main[disabled] { cursor: default; }
+.spot-main .avatar { width: 42px; height: 42px; }
+.spot.empty .spot-main .avatar { color: var(--accent); border-style: dashed; }
+/* Profinamen sind kurz ("Caps", "Faker"), aber nicht alle - lieber zwei
+   Zeilen umbrechen als mitten im Namen abschneiden. */
+.spot-name {
+  display: block; max-width: 100%; font-weight: 650; font-size: 0.75rem;
+  line-height: 1.2; overflow-wrap: anywhere; hyphens: auto;
+}
+.spot-sub {
+  display: block; font-family: var(--mono); font-size: 0.5625rem; color: var(--dim);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;
+}
+.spot-when, .spot-lock {
+  grid-area: when; font-size: 0.5625rem; line-height: 1.2;
+  align-self: center; color: var(--dim);
+}
+.spot-lock { color: var(--bad); font-weight: 650; }
+.spot-cap {
+  grid-area: cap; justify-self: end;
+  width: 22px; height: 22px; border-radius: 50%; padding: 0;
+  font-size: 0.6875rem; font-weight: 800; line-height: 1;
+  background: var(--surface-3); color: var(--dim); border: 1px solid var(--line-strong);
+}
+.spot-cap.on { background: var(--accent); color: #0d0a1f; border-color: transparent; }
+.spot-cap[disabled] { opacity: 0.3; cursor: default; }
+
+@media (min-width: 560px) {
+  .rift { gap: 12px; padding: 20px 18px; }
+  .spot { padding: 12px 12px 10px; }
+  .spot-main .avatar { width: 56px; height: 56px; }
+  .spot-role { font-size: 0.5625rem; letter-spacing: 0.1em; }
+  .spot-name { font-size: 0.9375rem; }
+  .spot-sub, .spot-when, .spot-lock { font-size: 0.6875rem; }
+  .spot-pts { font-size: 1.125rem; }
+  .spot-cap { width: 26px; height: 26px; font-size: 0.75rem; }
+}
+
+/* Auf dem grossen Bildschirm ist Platz fuer alle fuenf nebeneinander. Die
+ * Diagonale bleibt als Versatz erhalten - Top oben, Botlane unten, und die
+ * beiden Botlane-Plaetze stehen auf gleicher Hoehe, weil sie zusammen
+ * spielen. Das spart gegenueber dem 3x3-Raster gut die Haelfte an Hoehe.
+ */
+@media (min-width: 680px) {
+  .rift { grid-template-columns: repeat(5, minmax(0, 1fr)); padding-bottom: 20px; }
+  .spot-top     { grid-column: 1; grid-row: 1; margin-top: 0; }
+  .spot-jungle  { grid-column: 2; grid-row: 1; margin-top: 22px; }
+  .spot-mid     { grid-column: 3; grid-row: 1; margin-top: 44px; }
+  .spot-support { grid-column: 4; grid-row: 1; margin-top: 66px; }
+  .spot-bottom  { grid-column: 5; grid-row: 1; margin-top: 66px; }
+  .rift .river {
+    background: linear-gradient(72deg, transparent 47.6%, rgba(255, 255, 255, 0.055) 48%,
+      rgba(255, 255, 255, 0.055) 52%, transparent 52.4%);
+  }
+}
+
 .slot {
   display: grid;
   grid-template-columns: 46px minmax(0, 1fr) auto;
@@ -258,6 +397,99 @@ table.tbl .sub { font-size: 0.6875rem; color: var(--dim); }
 .gameline .pt { color: var(--score); font-weight: 700; }
 .gameline .wb { color: var(--good); }
 
+/* ------------------------------------------------------ Rechenweg je Spiel
+ *
+ * Zugeklappt steht da nur KDA und die Punktzahl; ein Tipp zeigt, wie die
+ * Zahl zustande kommt. Das war die eigentliche Bitte: sehen, wofuer es
+ * Punkte gab - nicht nur, dass es welche gab.
+ */
+.line + .line { margin-top: 3px; }
+.line-head {
+  display: flex; align-items: baseline; gap: 8px; width: 100%; text-align: left;
+  padding: 5px 7px; border-radius: var(--r-sm);
+  font-family: var(--mono); font-size: 0.6875rem; color: var(--dim);
+  background: var(--surface-2); border: 1px solid var(--line);
+}
+.line-head.flat { cursor: default; }
+button.line-head:active { background: var(--surface-3); }
+.line-head .spacer { flex: 1; }
+.line-head .ch { color: var(--text-2); font-weight: 650; }
+.line-head .kda { color: var(--text); }
+.line-head .wb { color: var(--good); }
+.line-head .pt { color: var(--score); font-weight: 700; font-size: 0.8125rem; }
+.line-head .caret { color: var(--dim); transition: transform 160ms var(--ease); display: inline-block; }
+.line-head.open { border-color: var(--accent-line); }
+.line-head.open .caret { transform: rotate(180deg); }
+
+.line-detail {
+  padding: 6px 8px 8px;
+  border: 1px solid var(--line); border-top: none;
+  border-radius: 0 0 var(--r-sm) var(--r-sm);
+  background: rgba(11, 13, 18, 0.5);
+}
+.part {
+  display: grid; grid-template-columns: minmax(0, auto) minmax(0, 1fr) auto;
+  gap: 8px; align-items: baseline;
+  font-size: 0.6875rem; padding: 2px 0;
+}
+.part .l { color: var(--text-2); }
+.part .d { font-family: var(--mono); color: var(--dim); }
+.part .v { font-family: var(--mono); font-weight: 650; color: var(--good); text-align: right; }
+.part .v.neg { color: var(--bad); }
+.part.total { border-top: 1px solid var(--line); margin-top: 4px; padding-top: 5px; }
+.part.total .l { color: var(--text); font-weight: 650; }
+.part.total .v { color: var(--score); font-weight: 700; }
+.part.note { display: block; color: var(--dim); font-style: italic; padding-top: 5px; }
+
+/* Kapitaen in der Punkteliste. */
+.x2 {
+  font-family: var(--mono); font-size: 0.625rem; font-weight: 700;
+  color: var(--accent); background: var(--accent-soft);
+  border: 1px solid var(--accent-line); border-radius: 99px; padding: 1px 6px;
+  vertical-align: middle;
+}
+table.tbl .pl { font-weight: 650; }
+
+/* ------------------------------------------------------------ Spielermarkt */
+
+/* Auf schmalen Geraeten scrollt die Tabelle in sich, nicht die Seite. */
+.tscroll { overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 0 -4px; padding: 0 4px; }
+
+table.tbl th.sortable { padding: 0 0 8px 0; text-align: right; }
+table.tbl th.sortable button {
+  background: none; border: none; padding: 0 0 0 10px;
+  font: inherit; color: inherit; letter-spacing: inherit; text-transform: inherit;
+  white-space: nowrap;
+}
+table.tbl th.sortable.on button { color: var(--accent); }
+table.tbl th.sortable .arr { display: inline-block; width: 0.7em; text-align: left; }
+table.tbl.market td { padding: 6px 0 6px 10px; white-space: nowrap; }
+table.tbl.market td.who { padding-left: 0; width: 100%; white-space: normal; }
+table.tbl.market td.num.on { color: var(--text); font-weight: 650; }
+table.tbl.market tr.on td { background: var(--accent-soft); }
+table.tbl.market tr.off { opacity: 0.45; }
+table.tbl.market .line2 .own { color: var(--accent); }
+
+/* Vier Zahlenspalten passen am Telefon nicht neben den Namen. Der Schnitt
+   fliegt zuerst raus - er steht auch im Auswahlfenster. */
+table.tbl th.sortable .sm { display: none; }
+
+@media (max-width: 559px) {
+  table.tbl th.opt, table.tbl td.opt { display: none; }
+  table.tbl th.sortable .lg { display: none; }
+  table.tbl th.sortable .sm { display: inline; }
+  table.tbl th.sortable button { letter-spacing: 0.04em; padding-left: 6px; }
+  table.tbl.market { font-size: 0.8125rem; }
+  table.tbl.market td { padding-left: 6px; }
+}
+
+.pbtn {
+  display: flex; align-items: center; gap: 9px; width: 100%; min-width: 0;
+  text-align: left; background: none; border: none; color: var(--text); padding: 0;
+}
+.pbtn[disabled] { cursor: default; }
+.pbtn:active:not([disabled]) .pname { color: var(--accent); }
+
 /* ---------------------------------------------------------------- Sheet */
 
 .sheet-back {
@@ -274,8 +506,11 @@ table.tbl .sub { font-size: 0.6875rem; color: var(--dim); }
   box-shadow: var(--shadow-3);
   transform: translateY(102%); transition: transform 320ms var(--ease);
   padding-bottom: env(safe-area-inset-bottom);
+  /* Zugeklappt steht das Blatt zwar unten ausserhalb, am Schreibtisch aber
+     nur knapp - ohne das hier faengt es Klicks auf der Reiterleiste ab. */
+  pointer-events: none;
 }
-.sheet.open { transform: translateY(0); }
+.sheet.open { transform: translateY(0); pointer-events: auto; }
 .sheet header { padding: 14px 16px 10px; border-bottom: 1px solid var(--line); }
 .sheet header .row { margin-bottom: 8px; }
 .sheet .body { overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 12px 12px 20px; }
@@ -291,7 +526,10 @@ table.tbl .sub { font-size: 0.6875rem; color: var(--dim); }
 .filters .chip { padding: 5px 10px; font-size: 0.75rem; }
 
 @media (min-width: 700px) {
-  .sheet { left: 50%; right: auto; bottom: 5vh; width: 620px; transform: translate(-50%, 110%); border-radius: var(--r-lg); }
+  /* Hier schwebt das Blatt statt am Rand zu kleben - der Weg nach unten muss
+     deshalb auch die 5vh Abstand mit abdecken, sonst schaut bei kurzem Inhalt
+     die obere Kante ueber die Reiterleiste. */
+  .sheet { left: 50%; right: auto; bottom: 5vh; width: 620px; transform: translate(-50%, calc(100% + 6vh)); border-radius: var(--r-lg); }
   .sheet.open { transform: translate(-50%, 0); }
 }
 

@@ -28,6 +28,7 @@ const state = {
   standings: null,
   breakdown: null,
   tab: "squad",
+  scoring: null,     // Punkteformel vom Server, fuer den Rechenweg
   authMode: "login",
   message: null,     // { kind: "err" | "ok" | "info", text }
   busy: false,
@@ -69,6 +70,50 @@ function avatar(p) {
   // Ohne Bild ein Kreis mit Anfangsbuchstabe - kein kaputtes Bildsymbol.
   if (!p.image) return `<span class="avatar" data-initial="${initial}">${initial}</span>`;
   return `<img class="avatar" src="${esc(p.image)}" alt="" loading="lazy">`;
+}
+
+/** -0.5 -> "−0,5", 0.02 -> "+0,02". Deutsches Komma, echtes Minuszeichen. */
+function fmtFactor(n) {
+  const v = Math.round(Number(n) * 1000) / 1000;
+  return (v > 0 ? "+" : "") + String(v).replace("-", "−").replace(".", ",");
+}
+
+/** Wie fmtFactor, aber immer mit einer Nachkommastelle: "+8,0", "−0,5". */
+function fmtSigned(n) {
+  const v = Math.round(Number(n) * 100) / 100;
+  const s = (Math.abs(v) < 0.005 ? 0 : v).toFixed(Math.abs(v) < 1 && v !== 0 ? 2 : 1);
+  return (v > 0 ? "+" : "") + s.replace("-", "−").replace(".", ",");
+}
+
+/**
+ * Rechnet nach, wofuer es die Punkte einer Spielzeile gab.
+ *
+ * Das ist bewusst eine reine Anzeige und nie die Quelle der Wahrheit: gewertet
+ * wird immer der vom Sammler gespeicherte Wert. Wenn sich die Formel seit dem
+ * Spiel geaendert hat, weicht die Summe hier ab - genau dafuer steht der
+ * Hinweis in der Detailansicht. Ohne bekannte Formel gibt es keinen Rechenweg,
+ * dann bleibt die Zeile eben zugeklappt.
+ */
+function scoreParts(line) {
+  const s = state.scoring;
+  if (!s) return null;
+  // Fehlende Werte als 0 lesen: eine unvollstaendige Formel darf hoechstens
+  // eine Zeile weniger zeigen, aber niemals NaN in die Anzeige schreiben.
+  const f = k => Number(s[k]) || 0;
+  const parts = [];
+  const add = (label, detail, value) => {
+    if (Math.abs(value) > 0.0001) parts.push({ label, detail, value });
+  };
+  add("Kills", `${line.k} × ${fmtFactor(f("kill"))}`, line.k * f("kill"));
+  add("Assists", `${line.a} × ${fmtFactor(f("assist"))}`, line.a * f("assist"));
+  add("Tode", `${line.d} × ${fmtFactor(f("death"))}`, line.d * f("death"));
+  add("Creep Score", `${line.cs} × ${fmtFactor(f("cs"))}`, line.cs * f("cs"));
+  if (s.bigGameAt && (line.k >= s.bigGameAt || line.a >= s.bigGameAt)) {
+    add("Großes Spiel", `${s.bigGameAt}+ Kills oder Assists`, f("bigGame"));
+  }
+  if (line.d === 0) add("Kein Tod", "das ganze Spiel", f("deathless"));
+  if (line.winBonus) add("Serien-Sieg", "einmal je Match", f("seriesWin"));
+  return parts;
 }
 
 async function api(path, options = {}) {
@@ -267,35 +312,40 @@ function leagueHeadHtml() {
     </div>`;
 }
 
-function slotHtml(role, slot) {
+/**
+ * Ein Platz auf der Karte. Die Rollen stehen diagonal wie die Lanes auf
+ * Summoner's Rift - Top oben links, Bot unten rechts. Das liest sich schneller
+ * als fuenf gleiche Zeilen untereinander und macht sofort klar, welche Rolle
+ * noch frei ist.
+ */
+function spotHtml(role, slot) {
   const filled = !!slot;
   const locked = filled && slot.locked;
   const cap = filled && slot.captain;
   const pts = filled ? slot.pts * (cap ? 2 : 1) : 0;
 
-  let line2, name;
-  if (!filled) {
-    name = '<span class="pname">frei</span>';
-    line2 = '<span class="line2">noch nicht besetzt</span>';
-  } else {
-    name = `<span class="pname">${esc(slot.name)}</span>`;
-    const when = locked
-      ? '<span class="lock">gesperrt</span>'
-      : (slot.kickoff ? `<span class="free">frei bis ${esc(whenShort(slot.kickoff))}</span>` : "kein Spiel");
-    line2 = `<span class="line2">${esc(slot.code || slot.team)} · <span class="price">${num(slot.paid)}</span> · ${when}</span>`;
-  }
+  const inner = filled ? `
+    ${avatar(slot)}
+    <span class="spot-name">${esc(slot.name)}</span>
+    <span class="spot-sub">${esc(slot.code || slot.team)} · ${num(slot.paid)}</span>`
+    : `<span class="avatar" aria-hidden="true">+</span>
+       <span class="spot-name">frei</span>
+       <span class="spot-sub">wählen</span>`;
+
+  const when = !filled ? ""
+    : locked ? '<span class="spot-lock">gesperrt</span>'
+    : slot.kickoff ? `<span class="spot-when">${esc(whenShort(slot.kickoff))}</span>`
+    : '<span class="spot-when">kein Spiel</span>';
 
   return `
-    <div class="slot ${cap ? "cap" : ""} ${locked ? "locked" : ""}">
-      <div class="role">${esc(ROLE_LABEL[role])}${cap ? "<br>C" : ""}</div>
-      <div class="player">${filled ? avatar(slot) : '<span class="avatar" aria-hidden="true">·</span>'}
-        <span class="pmeta">${name}${line2}</span></div>
-      <div class="pts ${pts ? "" : "zero"}">${num(pts)}</div>
-      <div class="actions">
-        <button class="btn ghost small" data-cap="${role}" ${!filled || locked ? "disabled" : ""}
-          title="Kapitän: doppelte Punkte">${cap ? "Kapitän ✓" : "Kapitän"}</button>
-        <button class="btn small" data-pick="${role}" ${locked ? "disabled" : ""}>${filled ? "Tauschen" : "Wählen"}</button>
-      </div>
+    <div class="spot spot-${role} ${cap ? "cap" : ""} ${locked ? "locked" : ""} ${filled ? "" : "empty"}">
+      <span class="spot-role">${esc(ROLE_LABEL[role])}</span>
+      <button class="spot-main" data-pick="${role}" ${locked ? "disabled" : ""}
+              title="${filled ? "Tauschen" : "Spieler wählen"}">${inner}</button>
+      <span class="spot-pts ${pts ? "" : "zero"}">${num(pts)}</span>
+      ${when}
+      <button class="spot-cap ${cap ? "on" : ""}" data-cap="${role}"
+              ${!filled || locked ? "disabled" : ""} title="Kapitän: doppelte Punkte">C</button>
     </div>`;
 }
 
@@ -309,83 +359,170 @@ function squadPanelHtml() {
     notes += `<div class="msg info">Noch ${missing} ${missing === 1 ? "Platz" : "Plätze"} frei.
       Unbesetzte Plätze bringen keine Punkte.</div>`;
   } else if (!me.captain) {
-    notes += `<div class="msg info">Kein Kapitän gesetzt - der bringt doppelte Punkte.</div>`;
+    notes += `<div class="msg info">Kein Kapitän gesetzt - tippe auf das <b>C</b>,
+      der Spieler zählt dann doppelt.</div>`;
   }
   if (me.inherited) {
     notes += `<div class="msg info">Dieser Kader läuft aus einer früheren Runde weiter.
-      Er zählt so, wie er ist - ändern kannst du ihn, solange das jeweilige Team noch nicht gespielt hat.</div>`;
+      Er zählt so, wie er ist - ändern kannst du ihn, solange das jeweilige Team
+      noch nicht gespielt hat.</div>`;
   }
 
   return `
     <div class="card">
-      <h2>Dein Kader</h2>
+      <div class="row">
+        <h2>Dein Kader</h2>
+        <div class="spacer"></div>
+        <div class="big-pts">${num(me.total)}<span>Punkte</span></div>
+      </div>
       ${messageHtml()}
-      <div class="budget ${me.cost > budget + 0.001 ? "over" : ""}" id="budget">
+      <div class="budget ${me.cost > budget + 0.001 ? "over" : ""}">
         <div class="bar"><i id="budget-fill"></i></div>
         <div class="num"><b>${num(me.cost)}</b> / ${num(budget)}</div>
       </div>
-      ${ROLES.map(r => slotHtml(r.key, me.slots[r.key])).join("")}
+      <div class="rift">
+        <span class="river" aria-hidden="true"></span>
+        ${ROLES.map(r => spotHtml(r.key, me.slots[r.key])).join("")}
+      </div>
       ${notes}
-      <p class="sub">Ein Platz ist gesperrt, sobald das Team des Spielers sein
-        erstes Spiel der Runde begonnen hat. Bezahlt wird der Preis vom Zeitpunkt der Wahl.</p>
+      <p class="sub">Ein Platz ist gesperrt, sobald das Team des Spielers sein erstes
+        Spiel der Runde begonnen hat. Bezahlt wird der Preis vom Zeitpunkt der Wahl.</p>
     </div>`;
 }
 
-function pointsPanelHtml() {
-  const league = state.league;
-  const bd = state.breakdown || {};
-  const linesFor = pid => (bd.lines || []).filter(l => l.playerId === pid);
+/** Eine Spielzeile samt Rechenweg: wofuer es die Punkte gab. */
+function lineHtml(line, playerId, index) {
+  const parts = scoreParts(line);
+  const sum = parts ? parts.reduce((a, p) => a + p.value, 0) : null;
+  const drifted = sum !== null && Math.abs(sum - line.pts) > 0.05;
+  const id = `ln-${esc(playerId)}-${index}`;
 
-  const mine = league.me;
-  const rows = ROLES.map(r => {
-    const slot = mine.slots[r.key];
-    if (!slot) return `<tr><td>${esc(r.label)}<div class="sub">frei</div></td><td class="num">–</td><td class="num big">0.0</td></tr>`;
+  // Der Kopf ist nur ein Knopf, wenn es auch etwas aufzuklappen gibt. Kennt
+  // der Server die Formel noch nicht, waere ein Pfeil ins Leere gelogen.
+  const body = `
+      <span class="ch">${esc(line.champion || "?")}</span>
+      <span class="kda">${line.k}/${line.d}/${line.a}</span>
+      <span class="cs">${line.cs} CS</span>
+      ${line.winBonus ? '<span class="wb">Sieg</span>' : ""}
+      <span class="spacer"></span>
+      <span class="pt">${num(line.pts)}</span>`;
+
+  if (!parts) return `<div class="line"><div class="line-head flat">${body}</div></div>`;
+
+  const head = `
+    <button class="line-head" data-line="${id}" aria-expanded="false" aria-controls="${id}">
+      ${body}<span class="caret" aria-hidden="true">▾</span>
+    </button>`;
+
+  return `
+    <div class="line">
+      ${head}
+      <div class="line-detail" id="${id}" hidden>
+        ${parts.map(p => `
+          <div class="part">
+            <span class="l">${esc(p.label)}</span>
+            <span class="d">${esc(p.detail)}</span>
+            <span class="v ${p.value < 0 ? "neg" : ""}">${fmtSigned(p.value)}</span>
+          </div>`).join("")}
+        <div class="part total">
+          <span class="l">Summe</span><span class="d"></span>
+          <span class="v">${num(line.pts)}</span>
+        </div>
+        ${drifted ? `<div class="part note">Die Punkteformel hat sich seit diesem
+          Spiel geändert - gewertet wird der gespeicherte Wert.</div>` : ""}
+      </div>
+    </div>`;
+}
+
+function breakdownRowsHtml(member, withLines) {
+  const bd = state.breakdown || {};
+  return ROLES.map(r => {
+    const slot = member.slots[r.key];
+    if (!slot) {
+      return `<tr><td>${esc(r.label)}<div class="sub">frei</div></td>
+              <td class="num">–</td><td class="num big">0.0</td></tr>`;
+    }
     const mult = slot.captain ? 2 : 1;
-    const lines = linesFor(slot.playerId).map(l => `
-      <div class="gameline"><span>${esc(l.champion || "?")}</span>
-        <span>${l.k}/${l.d}/${l.a}</span><span>${l.cs} CS</span>
-        ${l.winBonus ? '<span class="wb">Serien-Sieg</span>' : ""}
-        <span class="pt">${num(l.pts)}</span></div>`).join("");
+    const lines = withLines ? (bd.lines || []).filter(l => l.playerId === slot.playerId) : [];
     return `
       <tr>
-        <td>${esc(slot.name)}${mult > 1 ? ' <span class="pt">×2</span>' : ""}
-          <div class="sub">${esc(ROLE_LABEL[r.key])} · ${esc(slot.code || slot.team)} · ${slot.games} ${slot.games === 1 ? "Spiel" : "Spiele"}</div>
-          ${lines}</td>
+        <td>
+          <div class="pl">${esc(slot.name)}${mult > 1 ? ' <span class="x2">×2</span>' : ""}</div>
+          <div class="sub">${esc(ROLE_LABEL[r.key])} · ${esc(slot.code || slot.team)} ·
+            ${slot.games} ${slot.games === 1 ? "Spiel" : "Spiele"}</div>
+          ${lines.map((l, i) => lineHtml(l, slot.playerId, i)).join("")}
+        </td>
         <td class="num">${num(slot.pts)}</td>
         <td class="num big">${num(slot.pts * mult)}</td>
       </tr>`;
   }).join("");
+}
 
-  const others = league.members.filter(m => !m.you).map(m => {
-    if (m.hidden) {
-      return `<div class="card"><h2>${esc(m.name)}</h2>
-        <p class="empty">Verdeckt, bis dein eigener Kader vollständig ist. Punktestand: <b>${num(m.total)}</b></p></div>`;
-    }
-    return `<div class="card"><h2>${esc(m.name)} · ${num(m.total)}</h2>
-      <table class="tbl"><tbody>
-        ${ROLES.map(r => {
-          const s = m.slots[r.key];
-          if (!s) return `<tr><td>${esc(r.label)}<div class="sub">frei</div></td><td class="num">0.0</td></tr>`;
-          return `<tr><td>${esc(s.name)}${s.captain ? ' <span class="pt">×2</span>' : ""}
-            <div class="sub">${esc(ROLE_LABEL[r.key])} · ${esc(s.code || s.team)}</div></td>
-            <td class="num big">${num(s.pts * (s.captain ? 2 : 1))}</td></tr>`;
-        }).join("")}
-      </tbody></table></div>`;
-  }).join("");
+function pointsPanelHtml() {
+  const league = state.league;
+  const mine = league.me;
+  const others = league.members.filter(m => !m.you);
+
+  const legend = state.scoring ? `
+    <p class="sub">Kill ${fmtFactor(state.scoring.kill)} ·
+      Assist ${fmtFactor(state.scoring.assist)} ·
+      Tod ${fmtFactor(state.scoring.death)} ·
+      je Creep ${fmtFactor(state.scoring.cs)} ·
+      ${state.scoring.bigGameAt}+ Kills/Assists ${fmtFactor(state.scoring.bigGame)} ·
+      ohne Tod ${fmtFactor(state.scoring.deathless)} ·
+      Serien-Sieg ${fmtFactor(state.scoring.seriesWin)}</p>` : "";
 
   return `
     <div class="card">
-      <h2>Deine Punkte · ${esc(roundLabel(league.round.key))}</h2>
+      <div class="row">
+        <h2>Deine Punkte</h2>
+        <div class="spacer"></div>
+        <div class="big-pts">${num(mine.total)}<span>${esc(roundLabel(league.round.key))}</span></div>
+      </div>
+      <p class="sub">Tippe auf ein Spiel, um zu sehen, wofür es die Punkte gab.</p>
       <table class="tbl">
         <thead><tr><th>Spieler</th><th class="num">Roh</th><th class="num">Punkte</th></tr></thead>
-        <tbody>${rows}</tbody>
-        <tfoot><tr><td><b>Summe</b></td><td class="num"></td><td class="num big">${num(mine.total)}</td></tr></tfoot>
+        <tbody>${breakdownRowsHtml(mine, true)}</tbody>
+        <tfoot><tr><td><b>Summe</b></td><td class="num"></td>
+          <td class="num big">${num(mine.total)}</td></tr></tfoot>
       </table>
+      ${legend}
     </div>
-    ${others}`;
+    ${others.map(m => m.hidden ? `
+      <div class="card"><h2>${esc(m.name)}</h2>
+        <p class="empty">Verdeckt, bis dein eigener Kader vollständig ist.
+          Punktestand: <b>${num(m.total)}</b></p></div>`
+      : `
+      <div class="card">
+        <div class="row"><h2>${esc(m.name)}</h2><div class="spacer"></div>
+          <div class="big-pts">${num(m.total)}<span>Punkte</span></div></div>
+        <table class="tbl"><tbody>${breakdownRowsHtml(m, false)}</tbody></table>
+      </div>`).join("")}`;
 }
 
-let marketFilter = { role: "", league: "", q: "" };
+let marketFilter = { role: "", league: "", q: "", sort: "price", desc: true };
+
+/**
+ * Die Spalten des Marktes. Jede weiss, wie sie sortiert und wie sie sich
+ * darstellt - dann bleibt die Tabelle eine Schleife statt fuenf Sonderfaelle.
+ */
+const MARKET_COLS = [
+  { key: "price", head: "Preis", title: "Preis in Millionen",
+    value: p => p.price, cell: p => `<b>${num(p.price)}</b>` },
+  { key: "season", head: "Punkte", short: "Pkt", title: "Punkte diese Saison",
+    value: p => p.season, cell: p => num(p.season) },
+  // Der Schnitt ist die vierte Zahl in einer Reihe - am Telefon passt sie
+  // nicht mehr daneben, und im Auswahlfenster steht sie ohnehin.
+  { key: "avg", head: "Ø", title: "Punkte je Runde mit Einsatz", opt: true,
+    value: p => p.avg, cell: p => num(p.avg) },
+  { key: "picked", head: "Gewählt", short: "Wahl", title: "Anteil der Liga mit diesem Spieler",
+    value: p => p.picked, cell: (p, market) => pct(p.picked, market.members) },
+];
+
+function pct(part, total) {
+  if (!total) return "0 %";
+  return Math.round((part / total) * 100) + " %";
+}
 
 function marketPanelHtml() {
   const market = state.market;
@@ -394,16 +531,35 @@ function marketPanelHtml() {
   const leagues = [...new Set(market.players.map(p => p.league).filter(Boolean))].sort();
   const now = Math.floor(Date.now() / 1000);
   const q = marketFilter.q.toLowerCase();
-  const list = market.players.filter(p =>
+  const col = MARKET_COLS.find(c => c.key === marketFilter.sort) || MARKET_COLS[0];
+  const dir = marketFilter.desc ? -1 : 1;
+
+  const matching = market.players.filter(p =>
     (!marketFilter.role || p.role === marketFilter.role) &&
     (!marketFilter.league || p.league === marketFilter.league) &&
     (!q || `${p.name} ${p.team} ${p.code}`.toLowerCase().includes(q))
-  ).slice(0, 150);
+  );
+  // Gleichstand nach Namen aufloesen, sonst springen Zeilen bei jedem
+  // Neuzeichnen umher.
+  const list = matching.slice().sort((a, b) => {
+    const d = (col.value(a) - col.value(b)) * dir;
+    return d || a.name.localeCompare(b.name);
+  }).slice(0, 150);
+
+  // Am Telefon steht die Kurzform des Spaltennamens - beide sind im Markup,
+  // welche zu sehen ist, entscheidet das Stylesheet.
+  const head = MARKET_COLS.map(c => `
+    <th class="num sortable ${c.opt ? "opt" : ""} ${c.key === col.key ? "on" : ""}" title="${esc(c.title)}">
+      <button data-msort="${c.key}"><span class="lg">${esc(c.head)}</span><span
+        class="sm">${esc(c.short || c.head)}</span><span class="arr">${
+        c.key === col.key ? (marketFilter.desc ? "▾" : "▴") : ""}</span></button>
+    </th>`).join("");
 
   return `
     <div class="card">
       <h2>Spielermarkt</h2>
-      <p class="sub">Antippen setzt den Spieler auf seine Position in deinem Kader.</p>
+      <p class="sub">Antippen setzt den Spieler auf seine Position in deinem Kader.
+        Über die Spaltenköpfe sortieren.</p>
       ${messageHtml()}
       <input class="search" id="market-q" placeholder="Name oder Team" value="${esc(marketFilter.q)}">
       <div class="filters">
@@ -414,20 +570,39 @@ function marketPanelHtml() {
         <button class="chip ${!marketFilter.league ? "on" : ""}" data-mleague="">Alle Ligen</button>
         ${leagues.map(l => `<button class="chip ${marketFilter.league === l ? "on" : ""}" data-mleague="${esc(l)}">${esc(l)}</button>`).join("")}
       </div>
-      <div class="plist">
-        ${list.length ? list.map(p => {
-          const locked = p.kickoff && p.kickoff <= now;
-          return `
-          <button class="prow ${locked ? "off" : ""}" data-market="${esc(p.id)}" data-role="${esc(p.role)}" ${locked ? "disabled" : ""}>
-            ${avatar(p)}
-            <span><span class="pname">${esc(p.name)}</span>
-              <span class="sub"><br>${esc(ROLE_LABEL[p.role] || p.role)} · ${esc(p.code || p.team)} · ${esc(p.league || "")}
-              ${locked ? " · gesperrt" : (p.kickoff ? " · " + esc(whenShort(p.kickoff)) : " · kein Spiel")}</span></span>
-            <span class="num">Ø ${num(p.avg)}<br><span class="sub">${p.games} Sp.</span></span>
-            <span class="num"><b>${num(p.price)}</b></span>
-          </button>`;
-        }).join("") : '<p class="empty">Niemand gefunden.</p>'}
+      ${list.length ? `
+      <div class="tscroll">
+        <table class="tbl market">
+          <thead><tr><th>Spieler</th>${head}</tr></thead>
+          <tbody>
+            ${list.map(p => {
+              const locked = p.kickoff && p.kickoff <= now;
+              const mine = state.league.me.slots[p.role];
+              const owned = mine && mine.playerId === p.id;
+              return `
+              <tr class="${locked ? "off" : ""} ${owned ? "on" : ""}">
+                <td class="who">
+                  <button class="pbtn" data-market="${esc(p.id)}" data-role="${esc(p.role)}" ${locked ? "disabled" : ""}>
+                    ${avatar(p)}
+                    <span class="pmeta">
+                      <span class="pname">${esc(p.name)}</span>
+                      <span class="line2">${esc(ROLE_LABEL[p.role] || p.role)} · ${esc(p.code || p.team)}
+                        ${owned ? ' · <span class="own">im Kader</span>' : ""}
+                        ${locked ? ' · <span class="lock">gesperrt</span>'
+                          : p.kickoff ? " · " + esc(whenShort(p.kickoff)) : " · kein Spiel"}</span>
+                    </span>
+                  </button>
+                </td>
+                ${MARKET_COLS.map(c => `<td class="num ${c.opt ? "opt" : ""} ${
+                  c.key === col.key ? "on" : ""}">${c.cell(p, market)}</td>`).join("")}
+              </tr>`;
+            }).join("")}
+          </tbody>
+        </table>
       </div>
+      ${matching.length > list.length ? `<p class="sub">${matching.length - list.length}
+        weitere - grenze die Suche ein.</p>` : ""}`
+      : '<p class="empty">Niemand gefunden.</p>'}
     </div>`;
 }
 
@@ -535,6 +710,27 @@ function wireLeague() {
     btn.addEventListener("click", () => { marketFilter.role = btn.getAttribute("data-mrole"); renderLeague(); }));
   app.querySelectorAll("[data-mleague]").forEach(btn =>
     btn.addEventListener("click", () => { marketFilter.league = btn.getAttribute("data-mleague"); renderLeague(); }));
+
+  // Nochmal auf dieselbe Spalte dreht die Richtung um; eine neue Spalte
+  // startet absteigend - bei Preis und Punkten will man immer erst oben suchen.
+  app.querySelectorAll("[data-msort]").forEach(btn =>
+    btn.addEventListener("click", () => {
+      const key = btn.getAttribute("data-msort");
+      if (marketFilter.sort === key) marketFilter.desc = !marketFilter.desc;
+      else { marketFilter.sort = key; marketFilter.desc = true; }
+      renderLeague();
+    }));
+
+  // Rechenweg auf- und zuklappen. Ohne Neuzeichnen, sonst verliert man beim
+  // Auffalten die Scrollposition in einer langen Punkteliste.
+  app.querySelectorAll("[data-line]").forEach(btn =>
+    btn.addEventListener("click", () => {
+      const detail = document.getElementById(btn.getAttribute("data-line"));
+      if (!detail) return;
+      detail.hidden = !detail.hidden;
+      btn.classList.toggle("open", !detail.hidden);
+      btn.setAttribute("aria-expanded", detail.hidden ? "false" : "true");
+    }));
 
   const copy = document.getElementById("copy-invite");
   if (copy) copy.addEventListener("click", async () => {
@@ -660,14 +856,26 @@ async function saveSquad(change) {
   }
   setMessage(null, null);
   state.league = res.data;
-  // Punkte-Ansicht braucht die Spielzeilen der neuen Aufstellung.
+  if (res.data.scoring) state.scoring = res.data.scoring;
+  // Ein Wechsel aendert die Spielzeilen, die Gesamtwertung und die Spalte
+  // "Gewählt" im Markt. Was gerade zu sehen ist, wird sofort nachgeladen; der
+  // Rest wird verworfen, damit beim naechsten Reiterwechsel nichts Altes
+  // stehenbleibt.
+  state.breakdown = null;
+  state.standings = null;
+  state.market = null;
   if (state.tab === "points") await loadBreakdown();
+  else if (state.tab === "table") await loadStandings();
+  else if (state.tab === "market") await loadMarket();
   renderLeague();
 }
 
 async function loadMarket() {
   const res = await api(`/api/leagues/${state.leagueId}/market`);
-  if (res.ok) state.market = res.data;
+  if (res.ok) {
+    state.market = res.data;
+    if (res.data.scoring) state.scoring = res.data.scoring;
+  }
 }
 
 async function loadStandings() {
@@ -689,6 +897,7 @@ async function openLeague(id) {
   setMessage(null, null);
   app.innerHTML = '<p class="loading">Lade Liga…</p>';
   const res = await api(`/api/leagues/${id}`);
+  if (res.ok && res.data.scoring) state.scoring = res.data.scoring;
   if (!res.ok) {
     state.leagueId = null;
     setMessage("err", (res.data && res.data.error) || "Liga nicht erreichbar");

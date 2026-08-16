@@ -53,6 +53,36 @@ async function fixtureTable(env, roundKey) {
   return map;
 }
 
+/**
+ * Die Punkteformel, wie der Sammler sie zuletzt gemeldet hat.
+ *
+ * Die App liefert sie mit aus, damit die Oberfläche den Rechenweg zeigen kann
+ * ("4 Kills × 2 = 8") statt nur das Ergebnis. Zweitens hält sie die Anzeige
+ * automatisch richtig, wenn die Punkte im Sammler mal geändert werden - eine
+ * fest einprogrammierte Formel im Frontend würde dann still danebenliegen.
+ */
+async function scoringRules(env) {
+  const row = await env.DB.prepare("SELECT value FROM meta WHERE key = 'scoring'").first();
+  if (!row || !row.value) return null;
+  try {
+    return JSON.parse(row.value);
+  } catch (e) {
+    return null;
+  }
+}
+
+/** Kader aller Mitglieder einer Runde, inklusive Erbe. */
+async function allSquads(env, leagueId, roundKey) {
+  const members = await env.DB.prepare(
+    "SELECT user_id FROM members WHERE league_id = ?"
+  ).bind(leagueId).all();
+  const out = new Map();
+  for (const m of members.results) {
+    out.set(m.user_id, await effectiveSquad(env, leagueId, m.user_id, roundKey));
+  }
+  return out;
+}
+
 async function playerMap(env, ids) {
   if (!ids.length) return new Map();
   const marks = ids.map(() => "?").join(",");
@@ -232,11 +262,7 @@ export async function handleLeagueView(env, user, leagueId, wantRound) {
   const roundPts = new Map();
   for (const r of perRound.results) roundPts.set(r.player_id, { pts: r.pts, games: r.games });
 
-  // Kader aller Mitglieder einsammeln (inklusive Erbe).
-  const squads = new Map();
-  for (const m of members.results) {
-    squads.set(m.id, await effectiveSquad(env, leagueId, m.id, roundKey));
-  }
+  const squads = await allSquads(env, leagueId, roundKey);
 
   const ids = new Set();
   for (const sq of squads.values()) {
@@ -293,6 +319,7 @@ export async function handleLeagueView(env, user, leagueId, wantRound) {
   });
 
   return json({
+    scoring: await scoringRules(env),
     league: {
       id: league.id, name: league.name, budget: league.budget,
       inviteCode: league.owner_id === user.id ? league.invite_code : null,
@@ -432,6 +459,19 @@ export async function handleMarket(env, user, leagueId) {
     priceTable(env, current.key), fixtureTable(env, current.key),
   ]);
 
+  // Wie viele Mitglieder haben den Spieler im Kader? Im Vorbild aus dem
+  // Fussball heisst das "ausgewaehlt" und ist die interessanteste Spalte:
+  // sie zeigt, wo alle hinlaufen und wo noch etwas zu holen ist.
+  const squads = await allSquads(env, leagueId, current.key);
+  const picked = new Map();
+  for (const squad of squads.values()) {
+    for (const role of ROLES) {
+      const slot = squad.slots[role];
+      if (slot) picked.set(slot.playerId, (picked.get(slot.playerId) || 0) + 1);
+    }
+  }
+  const memberCount = squads.size || 1;
+
   const rows = await env.DB.prepare(
     `SELECT p.id, p.name, p.role, p.team_id, p.team, p.code, p.league, p.image,
             p.season_pts, p.season_games, p.season_avg,
@@ -444,6 +484,8 @@ export async function handleMarket(env, user, leagueId) {
 
   return json({
     round: current,
+    members: memberCount,
+    scoring: await scoringRules(env),
     players: rows.results.map(r => ({
       id: r.id, name: r.name, role: r.role, team: r.team, code: r.code,
       league: r.league, image: r.image,
@@ -451,6 +493,7 @@ export async function handleMarket(env, user, leagueId) {
       avg: r.season_avg, games: r.season_games, season: r.season_pts,
       roundPts: round1(r.round_pts),
       kickoff: r.team_id ? (fixtures.get(r.team_id) ?? null) : null,
+      picked: picked.get(r.id) || 0,
     })),
   });
 }

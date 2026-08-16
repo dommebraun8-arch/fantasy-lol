@@ -52,8 +52,8 @@ check("Name steht in der Kopfzeile", (await a.page.locator("#who").innerText()).
 
 await a.page.fill('#create-form input[name="name"]', "Kleena-Liga");
 await a.page.click('#create-form button');
-await a.page.waitForSelector(".slot");
-check("Liga anlegen fuehrt direkt in den Kader", await a.page.locator(".slot").count() === 5);
+await a.page.waitForSelector(".spot");
+check("Liga anlegen fuehrt direkt in den Kader", await a.page.locator(".spot").count() === 5);
 check("Reiterleiste ist sichtbar", await a.page.locator("#tabs button").count() === 4);
 
 const code = (await a.page.locator(".code").innerText()).trim();
@@ -64,7 +64,7 @@ console.log("\n== Beitreten ==");
 await b.page.waitForSelector("#join-form");
 await b.page.fill('#join-form input[name="code"]', code.toLowerCase());
 await b.page.click("#join-form button");
-await b.page.waitForSelector(".slot");
+await b.page.waitForSelector(".spot");
 check("Beitritt per Code fuehrt in dieselbe Liga",
   (await b.page.locator(".card h2").first().innerText()).includes("Kleena-Liga"),
   await b.page.locator(".card h2").first().innerText());
@@ -114,10 +114,11 @@ check("Kein Hinweis auf freie Plaetze mehr",
 console.log("\n== Kapitaen ==");
 await a.page.click('[data-cap="mid"]');
 await a.page.waitForTimeout(300);
-check("Kapitaensplatz ist markiert", await a.page.locator(".slot.cap").count() === 1);
+check("Kapitaensplatz ist markiert", await a.page.locator(".spot.cap").count() === 1);
 check("Knopf zeigt den Zustand",
-  (await a.page.locator('[data-cap="mid"]').innerText()).includes("✓"),
-  await a.page.locator('[data-cap="mid"]').innerText());
+  await a.page.locator('[data-cap="mid"].on').count() === 1);
+check("Alle fuenf Lanes stehen auf der Karte",
+  await a.page.locator(".rift .spot").count() === 5);
 await a.page.screenshot({ path: SHOTS + "/3-kader-voll.png", fullPage: true });
 
 console.log("\n== Budgetgrenze in der Oberflaeche ==");
@@ -192,13 +193,80 @@ await a.page.waitForTimeout(200);
 check("Suche greift", (await a.page.locator("[data-market]").allInnerTexts()).every(t => t.includes("SOO")));
 check("Suchfeld behaelt den Fokus",
   await a.page.evaluate(() => document.activeElement && document.activeElement.id) === "market-q");
+
+// Sortieren: die Preisspalte muss auf- und absteigend wirklich umsortieren.
+await a.page.click('[data-mrole=""]');
+await a.page.fill("#market-q", "");
+await a.page.waitForTimeout(200);
+const priceCol = async () => (await a.page.locator("table.market tbody tr")
+  .evaluateAll(rows => rows.map(r => parseFloat(r.querySelectorAll("td.num")[0].textContent))));
+let col = await priceCol();
+check("Markt startet nach Preis absteigend",
+  col.length > 2 && col.every((v, i) => i === 0 || col[i - 1] >= v), col.slice(0, 5));
+await a.page.click('[data-msort="price"]');
+await a.page.waitForTimeout(200);
+col = await priceCol();
+check("Nochmal klicken dreht die Richtung um",
+  col.every((v, i) => i === 0 || col[i - 1] <= v), col.slice(0, 5));
+
+await a.page.click('[data-msort="picked"]');
+await a.page.waitForTimeout(200);
+const marketText = await a.page.locator("table.market").innerText();
+check("Spalte Gewaehlt zeigt Prozent", /\d+ %/.test(marketText), marketText.slice(0, 200));
+const pickedCol = await a.page.locator("table.market tbody tr")
+  .evaluateAll(rows => rows.map(r => parseInt(r.querySelectorAll("td.num")[3].textContent)));
+check("Nach Gewaehlt sortiert stehen die beliebtesten oben",
+  pickedCol[0] > 0 && pickedCol.every((v, i) => i === 0 || pickedCol[i - 1] >= v), pickedCol.slice(0, 5));
 await a.page.screenshot({ path: SHOTS + "/6-markt.png", fullPage: true });
+
+console.log("\n== Rechenweg der Punkte ==");
+// Der einzige Spieler mit echten Spielzeilen im Testbestand ist SOO-mid.
+await a.page.click('[data-mrole="mid"]');
+await a.page.fill("#market-q", "SOO");
+await a.page.waitForTimeout(250);
+check("Markt-Zeile laesst sich anklicken", await a.page.locator("[data-market]").count() === 1,
+  await a.page.locator("[data-market]").count());
+await a.page.click("[data-market]");
+await a.page.waitForTimeout(400);
+await a.page.click('#tabs [data-tab="points"]');
+await a.page.waitForTimeout(500);
+
+const heads = a.page.locator(".line-head");
+check("Beide Spiele stehen einzeln da", await heads.count() === 2, await heads.count());
+check("Details sind zugeklappt", await a.page.locator(".line-detail:visible").count() === 0);
+await heads.first().click();
+await a.page.waitForTimeout(150);
+const detail = a.page.locator(".line-detail:visible").first();
+check("Ein Tipp klappt den Rechenweg auf", await detail.count() === 1);
+const detailText = await detail.innerText();
+for (const [label, expect] of [
+  ["Kills", "+10,0"], ["Assists", "+10,5"], ["Tode", "−0,5"],
+  ["Creep Score", "+6,0"], ["Serien-Sieg", "+3,0"],
+]) {
+  check(`Rechenweg nennt ${label} mit ${expect}`,
+    detailText.includes(label) && detailText.includes(expect), detailText);
+}
+check("Die Summe steht darunter", /Summe\s+29\.0/.test(detailText.replace(/\s+/g, " ")), detailText);
+check("Kein Hinweis auf eine alte Formel", !detailText.includes("geändert"), detailText);
+
+// Zweite Zeile: 7.0 gespeichert, die Formel ergaebe 12.0 - der Hinweis muss kommen.
+await heads.nth(1).click();
+await a.page.waitForTimeout(150);
+const drift = await a.page.locator(".line-detail:visible").nth(1).innerText();
+check("Kein Tod bringt Punkte", drift.includes("Kein Tod"), drift);
+check("Abweichende Formel wird benannt", drift.includes("geändert"), drift);
+await a.page.screenshot({ path: SHOTS + "/8-rechenweg.png", fullPage: true });
+
+await heads.first().click();
+await a.page.waitForTimeout(150);
+check("Nochmal tippen klappt wieder zu", await a.page.locator(".line-detail:visible").count() === 1,
+  await a.page.locator(".line-detail:visible").count());
 
 console.log("\n== Sitzung ueberdauert das Neuladen ==");
 await a.page.reload({ waitUntil: "domcontentloaded" });
-await a.page.waitForSelector(".slot");
-check("Nach dem Neuladen ist man noch angemeldet", await a.page.locator(".slot").count() === 5);
-check("Kader ist noch da", await a.page.locator(".slot.cap").count() === 1);
+await a.page.waitForSelector(".spot");
+check("Nach dem Neuladen ist man noch angemeldet", await a.page.locator(".spot").count() === 5);
+check("Kader ist noch da", await a.page.locator(".spot.cap").count() === 1);
 
 console.log("\n== Abmelden ==");
 await a.page.click("#switch-league");
@@ -214,11 +282,50 @@ console.log("\n== Darstellung ==");
 const overflow = await b.page.evaluate(() =>
   document.documentElement.scrollWidth - document.documentElement.clientWidth);
 check("Kein waagerechtes Scrollen am Telefon", overflow <= 1, overflow);
-const wide = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "de-DE", timezoneId: "Europe/Berlin" });
-const wp = await wide.newPage();
+// Der Markt hat vier Zahlenspalten - passen sie nicht, scrollt er in sich.
+// Am Telefon darf davon aber nichts abgeschnitten sein, sonst sieht man die
+// interessanteste Spalte ("Gewählt") nie.
+await b.page.click('#tabs [data-tab="market"]');
+await b.page.waitForSelector("table.market");
+const cut = await b.page.evaluate(() => {
+  const t = document.querySelector("table.market");
+  return t.scrollWidth - t.closest(".tscroll").clientWidth;
+});
+check("Markttabelle passt aufs Telefon", cut <= 0, cut);
+await b.page.click('#tabs [data-tab="squad"]');
+await b.page.waitForSelector(".spot");
+const collide = await b.page.evaluate(() => [...document.querySelectorAll(".spot")].filter(s => {
+  const r = s.querySelector(".spot-role").getBoundingClientRect();
+  const p = s.querySelector(".spot-pts").getBoundingClientRect();
+  return r.right > p.left + 0.5;
+}).map(s => s.className));
+check("Rolle und Punktzahl ueberlappen nicht", collide.length === 0, collide);
+// Am Schreibtisch soll dieselbe Ansicht die Breite auch nutzen - dieselbe
+// Sitzung wie B, nur in einem grossen Fenster.
+const wide = await b.context.newPage();
+await wide.setViewportSize({ width: 1280, height: 900 });
+await wide.goto(BASE);
+await wide.waitForSelector(".spot");
+await wide.screenshot({ path: SHOTS + "/7-desktop-kader.png", fullPage: true });
+await wide.click('#tabs [data-tab="market"]');
+await wide.waitForSelector("table.market");
+check("Am Schreibtisch steht auch der Schnitt in der Tabelle",
+  await wide.locator("table.market thead th.opt:visible").count() === 1);
+await wide.screenshot({ path: SHOTS + "/7b-desktop-markt.png", fullPage: true });
+const wideOverflow = await wide.evaluate(() =>
+  document.documentElement.scrollWidth - document.documentElement.clientWidth);
+check("Kein waagerechtes Scrollen am Schreibtisch", wideOverflow <= 1, wideOverflow);
+// Am Schreibtisch sitzt das Auswahlblatt nicht am unteren Rand, sondern
+// schwebt - zugeklappt muss es trotzdem komplett aus dem Bild sein, sonst
+// liegt es ueber der Reiterleiste.
+const sheetTop = await wide.evaluate(() =>
+  Math.round(document.getElementById("sheet").getBoundingClientRect().top - window.innerHeight));
+check("Zugeklapptes Auswahlblatt liegt unter dem Bildrand", sheetTop >= 0, sheetTop);
+
+const wp = await browser.newPage();
 await wp.goto(BASE);
 await wp.waitForSelector("#auth-form");
-await wp.screenshot({ path: SHOTS + "/7-desktop-login.png" });
+await wp.screenshot({ path: SHOTS + "/7c-desktop-login.png" });
 
 console.log("\n== Fehlerfreiheit ==");
 check("Keine JS-Fehler bei A", a.errors.length === 0, a.errors);

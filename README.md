@@ -38,6 +38,13 @@ Fremde Kader sind verdeckt, bis der eigene vollständig steht - sonst schreibt
 man einfach ab. Die Punktzahl der anderen sieht man trotzdem; die verrät keine
 Aufstellung und macht den Wettkampf erst spannend.
 
+Der eigene Kader steht als Karte da, die Plätze diagonal wie die Lanes auf
+Summoner's Rift - am Telefon als 3×3-Raster, am Schreibtisch als eine Reihe.
+Im *Markt* liegt daneben eine sortierbare Tabelle mit Preis, Saisonpunkten,
+Schnitt und der Spalte **Gewählt**: wie viele in deiner Liga diesen Spieler
+schon haben. Die ist der interessanteste Wert der Seite - sie zeigt, wo alle
+hinlaufen und wo noch etwas zu holen ist.
+
 ### Punkte
 
 Pro Spiel eines Spielers:
@@ -55,6 +62,14 @@ Pro Spiel eines Spielers:
 Der Sieg-Bonus hängt am Match und nicht am einzelnen Spiel, weil die API nur
 den Sieger der Serie meldet - wer ein einzelnes Spiel gewonnen hat, steht
 nirgends. Angezeigt wird er beim letzten Spiel des Spielers in diesem Match.
+
+Unter *Punkte* steht jedes Spiel einzeln, und ein Tipp darauf klappt den
+Rechenweg auf: „Kills 5 × +2 → +10,0", „Tode 1 × −0,5 → −0,5" und so weiter
+bis zur Summe. Die Formel dafür liefert der Server - der Sammler schickt sie
+beim Abschluss eines Laufs mit -, damit Anzeige und Wertung nicht
+auseinanderlaufen. Passt die aufgeklappte Summe trotzdem nicht zum gewerteten
+Wert, steht das dabei: dann wurde das Spiel nach einer älteren Formel
+gerechnet und behält seine Punkte.
 
 ### Preise
 

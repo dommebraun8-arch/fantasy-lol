@@ -114,12 +114,23 @@ async function main() {
   await ingest("fixtures", teams.filter(t => t.first).map(t => ({
     roundKey: round.key, teamId: t.id, firstStart: t.first,
   })), { replaceRounds: [round.key] });
+  // Zwei Spielzeilen mit Absicht: die erste geht mit der Formel unten genau
+  // auf, die zweite nicht. So laesst sich beides pruefen - der Rechenweg und
+  // der Hinweis, dass eine aeltere Zeile nach alter Formel gewertet bleibt.
+  //   g1: 5*2 + 7*1.5 + 1*(-0.5) + 300*0.02 + 3 = 29.0
   await ingest("lines", [{
     gameId: "g1", playerId: "t-soon-mid", roundKey: round.key, matchId: "m1",
-    league: "LEC", champion: "Jax", k: 5, d: 1, a: 7, cs: 300, pts: 10, winBonus: true,
+    league: "LEC", champion: "Jax", k: 5, d: 1, a: 7, cs: 300, pts: 29, winBonus: true,
     startedAt: now - 100,
+  }, {
+    gameId: "g2", playerId: "t-soon-mid", roundKey: round.key, matchId: "m1",
+    league: "LEC", champion: "Sett", k: 2, d: 0, a: 3, cs: 250, pts: 7, winBonus: false,
+    startedAt: now - 50,
   }]);
-  res = await ingest("done", [], { scoring: { kill: 2 } });
+  res = await ingest("done", [], {
+    scoring: { kill: 2, assist: 1.5, death: -0.5, cs: 0.02,
+      bigGame: 2, bigGameAt: 10, deathless: 2, seriesWin: 3 },
+  });
   check("Abschlussmeldung wird angenommen", res.status === 200, res);
 
   // ------------------------------------------------------------ Konten
@@ -269,9 +280,26 @@ async function main() {
   res = await b.get(`/api/leagues/${league.id}/breakdown?user=${aRow.userId}`);
   check("Aufschluesselung jetzt erlaubt", res.status === 200, res.status);
 
+  // "Wie viele haben den?" ist die interessanteste Spalte des Marktes - sie
+  // muss die echten Kader zaehlen, nicht nur den eigenen.
+  res = await b.get(`/api/leagues/${league.id}/market`);
+  check("Markt nennt die Mitgliederzahl", res.data.members === 2, res.data.members);
+  const soonMid = res.data.players.find(p => p.id === "t-soon-mid");
+  const lateMid = res.data.players.find(p => p.id === "t-late-mid");
+  const noneMid = res.data.players.find(p => p.id === "t-none-mid");
+  check("Von zwei Mitgliedern hat einer t-soon-mid", soonMid.picked === 1, soonMid.picked);
+  check("Und einer t-late-mid", lateMid.picked === 1, lateMid.picked);
+  check("Ungewaehlte stehen auf 0", noneMid.picked === 0, noneMid.picked);
+
   res = await b.get(`/api/leagues/${league.id}/breakdown`);
-  check("Eigene Aufschluesselung zeigt die Spielzeile",
-    res.data.lines.length === 1 && res.data.lines[0].winBonus === true, res.data.lines);
+  check("Eigene Aufschluesselung zeigt beide Spielzeilen",
+    res.data.lines.length === 2 && res.data.lines[0].winBonus === true, res.data.lines);
+  // Ohne die Formel kann die Oberflaeche keinen Rechenweg zeigen - sie muss
+  // deshalb mit der Ligaansicht mitkommen, nicht nur mit dem Markt.
+  res = await b.get(`/api/leagues/${league.id}`);
+  check("Ligaansicht liefert die Punkteformel mit",
+    res.data.scoring && res.data.scoring.kill === 2 && res.data.scoring.seriesWin === 3,
+    res.data.scoring);
 
   // ------------------------------------------------------------ Sperren
   heading("Sperren");

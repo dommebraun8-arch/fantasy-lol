@@ -83,6 +83,12 @@ async function main() {
         id: `${team.id}-${role}`, name: `${team.code}-${role}`, role,
         teamId: team.id, team: team.code + " Esports", code: team.code, league: "LEC",
         image: "", seasonPts: 100, seasonGames: 10, seasonAvg: 10,
+        // Woher die Punkte kommen. Absichtlich je Rolle verschieden, damit
+        // sich pruefen laesst, dass der Markt nicht ueberall dasselbe zeigt:
+        // der Support lebt von Assists, der Bot von Kills.
+        seasonK: role === "bottom" ? 60 : role === "support" ? 5 : 30,
+        seasonA: role === "support" ? 90 : 40,
+        seasonD: 20, seasonCs: role === "support" ? 400 : 2500, seasonWins: 6,
       });
     }
   }
@@ -112,7 +118,8 @@ async function main() {
     games: 2,
   })));
   await ingest("fixtures", teams.filter(t => t.first).map(t => ({
-    roundKey: round.key, teamId: t.id, firstStart: t.first,
+    roundKey: round.key, teamId: t.id, firstStart: t.first, opponent: "GEG",
+    opponentId: "t-geg",
   })), { replaceRounds: [round.key] });
   // Zwei Spielzeilen mit Absicht: die erste geht mit der Formel unten genau
   // auf, die zweite nicht. So laesst sich beides pruefen - der Rechenweg und
@@ -199,8 +206,18 @@ async function main() {
   check("Markt liefert Spieler mit Preisen",
     res.status === 200 && res.data.players.length === 20 && res.data.players.every(p => p.price > 0),
     res.data.players && res.data.players.slice(0, 2));
-  check("Markt nennt den Anpfiff des Teams",
-    res.data.players.find(p => p.id === "t-soon-mid").kickoff > now, res.data.players[0]);
+  const soonMid0 = res.data.players.find(p => p.id === "t-soon-mid");
+  check("Markt nennt den Anpfiff des Teams", soonMid0.kickoff > now, res.data.players[0]);
+  // Eine Uhrzeit allein sagt wenig - gegen wen gespielt wird, gehoert dazu.
+  check("Markt nennt auch den Gegner", soonMid0.opponent === "GEG", soonMid0);
+  // Wodurch die Punkte zustande kommen. Ohne das steht im Markt nur, *dass*
+  // jemand gut ist.
+  check("Markt liefert die Herkunft der Punkte mit",
+    soonMid0.kda && soonMid0.kda.k === 30 && soonMid0.kda.a === 40
+    && soonMid0.kda.cs === 2500 && soonMid0.kda.wins === 6, soonMid0.kda);
+  const soonSup = res.data.players.find(p => p.id === "t-soon-support");
+  check("Und sie unterscheidet sich je Spieler",
+    soonSup.kda.a === 90 && soonSup.kda.k === 5, soonSup.kda);
 
   res = await a.put(squadUrl, { role: "mid", playerId: "t-lock-mid" });
   check("Gesperrter Spieler wird abgelehnt", res.status === 409, res.data);

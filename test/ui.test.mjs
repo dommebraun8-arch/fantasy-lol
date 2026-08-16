@@ -294,12 +294,35 @@ const cut = await b.page.evaluate(() => {
 check("Markttabelle passt aufs Telefon", cut <= 0, cut);
 await b.page.click('#tabs [data-tab="squad"]');
 await b.page.waitForSelector(".spot");
-const collide = await b.page.evaluate(() => [...document.querySelectorAll(".spot")].filter(s => {
-  const r = s.querySelector(".spot-role").getBoundingClientRect();
-  const p = s.querySelector(".spot-pts").getBoundingClientRect();
-  return r.right > p.left + 0.5;
-}).map(s => s.className));
-check("Rolle und Punktzahl ueberlappen nicht", collide.length === 0, collide);
+// Die Plaetze liegen frei auf der Karte, nicht in einem Raster - ohne diese
+// Zusicherung koennte einer den anderen verdecken und unklickbar machen.
+const collide = await b.page.evaluate(() => {
+  const spots = [...document.querySelectorAll(".spot")];
+  const boxes = spots.map(s => [s.className.trim(), s.getBoundingClientRect()]);
+  const hits = [];
+  for (let i = 0; i < boxes.length; i++) {
+    for (let j = i + 1; j < boxes.length; j++) {
+      const [na, a] = boxes[i], [nb, b] = boxes[j];
+      if (a.right > b.left + 1 && b.right > a.left + 1
+          && a.bottom > b.top + 1 && b.bottom > a.top + 1) hits.push(na + " / " + nb);
+    }
+  }
+  return hits;
+});
+check("Die Plaetze auf der Karte ueberlappen sich nicht", collide.length === 0, collide);
+const inside = await b.page.evaluate(() => {
+  const map = document.querySelector(".rift").getBoundingClientRect();
+  return [...document.querySelectorAll(".spot")].filter(s => {
+    const r = s.getBoundingClientRect();
+    return r.left < map.left - 1 || r.right > map.right + 1
+        || r.top < map.top - 1 || r.bottom > map.bottom + 1;
+  }).map(s => s.className.trim());
+});
+check("Und keiner ragt ueber die Karte hinaus", inside.length === 0, inside);
+check("Karte zeigt die Kluft", await b.page.locator(".rift .rift-map").count() === 1);
+check("Wann und gegen wen steht darunter",
+  await b.page.locator(".fixtures .fx").count() === 5,
+  await b.page.locator(".fixtures .fx").count());
 // Am Schreibtisch soll dieselbe Ansicht die Breite auch nutzen - dieselbe
 // Sitzung wie B, nur in einem grossen Fenster.
 const wide = await b.context.newPage();

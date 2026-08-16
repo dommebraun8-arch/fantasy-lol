@@ -38,14 +38,33 @@ Fremde Kader sind verdeckt, bis der eigene vollständig steht - sonst schreibt
 man einfach ab. Die Punktzahl der anderen sieht man trotzdem; die verrät keine
 Aufstellung und macht den Wettkampf erst spannend.
 
-Der eigene Kader steht auf einer Karte, die den Blick auf Summoner's Rift
-zitiert: Nebel und Fels am Rand, der Fluss diagonal hindurch, der rote Nexus
-unten links und der blaue oben rechts. Die Plätze liegen darauf wie die Lanes
-- am Telefon als 3×3-Raster, am Schreibtisch als eine Reihe mit Versatz.
-Im *Markt* liegt daneben eine sortierbare Tabelle mit Preis, Saisonpunkten,
-Schnitt und der Spalte **Gewählt**: wie viele in deiner Liga diesen Spieler
-schon haben. Die ist der interessanteste Wert der Seite - sie zeigt, wo alle
+Der eigene Kader steht auf der Kluft der Beschwörer: drei Lanes, der Fluss
+quer hindurch, die Waldstücke dazwischen, der rote Nexus unten links und der
+blaue oben rechts. Jeder Platz liegt dort, wo die Rolle wirklich spielt - Top
+oben links, der Jungler zwischen den Lanes, Mid in der Mitte, Botlane unten
+rechts. Antippen wählt den Spieler für diese Position.
+
+Die Karte ist selbst gezeichnet (ein SVG in `riftMapSvg()`), nicht Riots
+Artwork: ein Bild müsste nachgeladen werden, wäre nicht meins und ließe sich
+nicht mit den Farben der Seite einfärben. Ein SVG kostet nichts und bleibt bei
+jeder Größe scharf.
+
+Unter der Karte steht, **wann und gegen wen** jeder deiner Spieler antritt -
+auf den Marken selbst wäre dafür kein Platz, und untereinander liest man die
+Woche auf einen Blick: welcher Platz läuft schon, welchen kannst du noch
+tauschen.
+
+Im *Markt* liegt eine sortierbare Tabelle mit Preis, Saisonpunkten, Schnitt
+und der Spalte **Gewählt**: wie viele in deiner Liga diesen Spieler schon
+haben. Die ist der interessanteste Wert der Seite - sie zeigt, wo alle
 hinlaufen und wo noch etwas zu holen ist.
+
+Unter jedem Namen steht außerdem ein Balken, **wodurch** die Punkte zustande
+kommen: Kills, Assists, Creep Score, Siege. „Ø 18.4" sagt nur, dass jemand gut
+ist; der Balken sagt warum. Ein Support, der von Assists lebt, sieht anders aus
+als ein Botlaner mit Kills - und wer seine Punkte vor allem aus Creep Score
+zieht, ist verlässlich statt spektakulär. Die Zahlen darunter sind der Schnitt
+je Spiel.
 
 ### Punkte
 
@@ -103,7 +122,9 @@ eintragen:
 npx wrangler d1 create fantasy-lol
 ```
 
-**2. Tabellen anlegen:**
+**2. Tabellen anlegen** (auch nach jedem `git pull`, der neue Dateien in
+`migrations/` bringt - sonst schlägt die Aufnahme der Statistikdaten mit
+"no such column" fehl, bis das Schema stimmt):
 
 ```bash
 npm run db:remote     # legt das Schema in der echten Datenbank an
@@ -259,8 +280,9 @@ einzelner Platz und der Rest wäre weg.
   nächste Durchgang.
 - **Welche Matches:** `getSchedule` plus `getCompletedEvents` je Turnier der
   laufenden Saison.
-- **Anpfiffe für die Sperren:** `getSchedule`, erster Anpfiff jedes Teams in
-  der laufenden und der kommenden Runde. Achtung: der Spielplan liefert für
+- **Anpfiffe und Gegner:** `getSchedule`, erster Anpfiff jedes Teams in
+  der laufenden und der kommenden Runde. Der Gegner steht im selben Eintrag und
+  kostet keine zusätzliche Anfrage. Achtung: der Spielplan liefert für
   viele Einträge `"id": null` bei den Teams. Name und Kürzel stehen aber drin,
   darüber wird die Team-ID aus `getTeams` nachgeschlagen - ohne das verschwindet
   jeder Anpfiff und die Sperre greift nie.

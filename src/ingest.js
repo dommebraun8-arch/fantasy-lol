@@ -101,13 +101,16 @@ export async function handleIngest(request, env) {
       if (body.first) await env.DB.prepare("UPDATE players SET active = 0").run();
       await bulk(env, "players",
         ["id", "name", "role", "team_id", "team", "code", "league", "image", "active",
-          "season_pts", "season_games", "season_avg"],
+          "season_pts", "season_games", "season_avg",
+          "season_k", "season_d", "season_a", "season_cs", "season_wins"],
         rows.map(r => ({
           id: str(r.id, 64), name: str(r.name, 80) || "?", role: str(r.role, 16) || "mid",
           team_id: str(r.teamId, 64), team: str(r.team, 80), code: str(r.code, 16),
           league: str(r.league, 32), image: str(r.image, 400), active: 1,
           season_pts: num(r.seasonPts), season_games: num(r.seasonGames),
           season_avg: num(r.seasonAvg),
+          season_k: num(r.seasonK), season_d: num(r.seasonD), season_a: num(r.seasonA),
+          season_cs: num(r.seasonCs), season_wins: num(r.seasonWins),
         })).filter(r => r.id));
       break;
     }
@@ -154,9 +157,11 @@ export async function handleIngest(request, env) {
           await env.DB.prepare("DELETE FROM fixtures WHERE round_key = ?").bind(key).run();
         }
       }
-      await bulk(env, "fixtures", ["round_key", "team_id", "first_start"],
+      await bulk(env, "fixtures",
+        ["round_key", "team_id", "first_start", "opponent", "opponent_id"],
         rows.map(r => ({
           round_key: str(r.roundKey, 16), team_id: str(r.teamId, 64), first_start: num(r.firstStart),
+          opponent: str(r.opponent, 40), opponent_id: str(r.opponentId, 64),
         })).filter(r => r.round_key && r.team_id));
       break;
     }

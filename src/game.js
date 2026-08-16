@@ -44,13 +44,28 @@ async function priceTable(env, roundKey) {
   return map;
 }
 
+/**
+ * Anpfiff und Gegner je Team für eine Runde.
+ *
+ * Der Anpfiff entscheidet über die Sperre, der Gegner ist reine Anzeige -
+ * "Sa 17:00 gegen G2" sagt mehr als "Sa 17:00". Beides steht in derselben
+ * Zeile, deshalb hier zusammen.
+ */
 async function fixtureTable(env, roundKey) {
   const rows = await env.DB.prepare(
-    "SELECT team_id, first_start FROM fixtures WHERE round_key = ?"
+    "SELECT team_id, first_start, opponent FROM fixtures WHERE round_key = ?"
   ).bind(roundKey).all();
   const map = new Map();
-  for (const r of rows.results) map.set(r.team_id, r.first_start);
+  for (const r of rows.results) {
+    map.set(r.team_id, { at: r.first_start, opponent: r.opponent || "" });
+  }
   return map;
+}
+
+/** Anpfiff und Gegner eines Teams - beides null/leer, wenn nichts ansteht. */
+function fixtureOf(fixtures, teamId) {
+  const f = teamId ? fixtures.get(teamId) : null;
+  return { kickoff: f ? f.at : null, opponent: f ? f.opponent : "" };
 }
 
 /**
@@ -284,7 +299,7 @@ export async function handleLeagueView(env, user, leagueId, wantRound) {
       total += stat.pts * mult;
       if (!withSquad) continue;
       const p = players.get(slot.playerId) || null;
-      const kickoff = p && p.team_id ? (fixtures.get(p.team_id) ?? null) : null;
+      const { kickoff, opponent } = fixtureOf(fixtures, p && p.team_id);
       slots[role] = {
         playerId: slot.playerId,
         name: p ? p.name : "Unbekannt",
@@ -294,7 +309,7 @@ export async function handleLeagueView(env, user, leagueId, wantRound) {
         price: prices.get(slot.playerId) ?? null,
         pts: round1(stat.pts), games: stat.games,
         captain: sq.captain === role,
-        kickoff,
+        kickoff, opponent,
         locked: kickoff !== null && kickoff <= now,
       };
     }
@@ -475,6 +490,7 @@ export async function handleMarket(env, user, leagueId) {
   const rows = await env.DB.prepare(
     `SELECT p.id, p.name, p.role, p.team_id, p.team, p.code, p.league, p.image,
             p.season_pts, p.season_games, p.season_avg,
+            p.season_k, p.season_d, p.season_a, p.season_cs, p.season_wins,
             COALESCE(pr.pts, 0) AS round_pts
        FROM players p
        LEFT JOIN player_round pr ON pr.player_id = p.id AND pr.round_key = ?
@@ -492,8 +508,13 @@ export async function handleMarket(env, user, leagueId) {
       price: prices.get(r.id) ?? DEFAULT_PRICE,
       avg: r.season_avg, games: r.season_games, season: r.season_pts,
       roundPts: round1(r.round_pts),
-      kickoff: r.team_id ? (fixtures.get(r.team_id) ?? null) : null,
+      ...fixtureOf(fixtures, r.team_id),
       picked: picked.get(r.id) || 0,
+      // Wodurch die Punkte zustande kommen. Der Markt zeigt damit nicht nur,
+      // wer gut ist, sondern warum - ein Support mit 9 Assists je Spiel ist
+      // etwas anderes als ein Midlaner mit 5 Kills.
+      kda: { k: r.season_k, d: r.season_d, a: r.season_a, cs: r.season_cs,
+             wins: r.season_wins },
     })),
   });
 }
@@ -528,8 +549,8 @@ export async function handleSetSquad(request, env, user, leagueId) {
     if (!pid) return false;
     const p = await env.DB.prepare("SELECT team_id FROM players WHERE id = ?").bind(pid).first();
     if (!p || !p.team_id) return false;
-    const start = fixtures.get(p.team_id);
-    return start !== undefined && start <= now;
+    const { kickoff } = fixtureOf(fixtures, p.team_id);
+    return kickoff !== null && kickoff <= now;
   };
 
   if (typeof body.role === "string") {

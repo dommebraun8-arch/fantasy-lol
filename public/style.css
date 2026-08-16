@@ -301,157 +301,196 @@ nav.tabs button.on .ic { opacity: 1; color: var(--accent); }
 }
 .budget .num b { color: var(--text); }
 
+/* Die Karte ist quadratisch wie das Original; die Plätze liegen absolut
+   darauf, wo die Rolle wirklich spielt. Deshalb kein Raster: ein Raster
+   könnte den Jungler nicht zwischen die Lanes setzen. */
 .rift {
   position: relative;
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: var(--s2);
-  padding: var(--s3) var(--s2);
+  aspect-ratio: 1 / 1;
+  width: 100%;
   margin-bottom: var(--s3);
   border-radius: 22px;
   border: 1px solid var(--line);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07), var(--shadow-2);
   overflow: hidden;
-  /* Von außen nach innen: die beiden Nexus als Glut in den Ecken - rot unten
-     links, blau oben rechts wie im Bild -, dann der Nebel, der die Ränder
-     schluckt, darunter die Ebene mit ein paar dunklen Waldflecken. */
-  background:
-    radial-gradient(30% 34% at 5% 97%, rgba(255, 96, 80, 0.42), transparent 72%),
-    radial-gradient(30% 34% at 96% 3%, rgba(96, 190, 255, 0.38), transparent 72%),
-    radial-gradient(26% 30% at 26% 22%, rgba(0, 0, 0, 0.34), transparent 70%),
-    radial-gradient(26% 30% at 74% 78%, rgba(0, 0, 0, 0.34), transparent 70%),
-    radial-gradient(128% 96% at 50% 50%, transparent 30%, rgba(3, 5, 7, 0.92) 100%),
-    linear-gradient(158deg, #24331d 0%, #1d2c20 46%, #16211d 100%);
 }
-/* Der Fluss läuft quer durch die Karte, im Bild von unten links nach oben
-   rechts - eine türkise Bahn mit hellem Schaum an beiden Ufern. */
-.rift .river {
-  position: absolute; inset: -20% -12%; pointer-events: none;
-  background:
-    linear-gradient(46deg, transparent 45.8%, rgba(120, 214, 226, 0.14) 46.4%,
-      rgba(150, 232, 240, 0.46) 49.4%, rgba(170, 240, 246, 0.52) 50%,
-      rgba(150, 232, 240, 0.46) 50.6%, rgba(120, 214, 226, 0.14) 53.6%, transparent 54.2%),
-    linear-gradient(46deg, transparent 44.4%, rgba(255, 255, 255, 0.10) 45%,
-      transparent 45.8%, transparent 54.2%, rgba(255, 255, 255, 0.10) 55%, transparent 55.6%);
-  filter: blur(1px);
-  opacity: 0.72;
+.rift-map { position: absolute; inset: 0; width: 100%; height: 100%; }
+/* Die Waldstuecke zwischen den Lanes - dunkler als die Wege, sonst sieht man
+   die Struktur der Karte nicht. */
+.rift-jungle { fill: rgba(0, 0, 0, 0.40); }
+.rift-river { fill: rgba(122, 214, 228, 0.30); }
+.rift-lane {
+  fill: none; stroke: rgba(226, 212, 156, 0.40);
+  stroke-width: 4.4; stroke-linecap: round; stroke-linejoin: round;
 }
+.rift-lane-edge {
+  fill: none; stroke: rgba(0, 0, 0, 0.30);
+  stroke-width: 7; stroke-linecap: round; stroke-linejoin: round;
+}
+.rift-nexus.red { fill: #ff9a86; }
+.rift-nexus.blue { fill: #8ed4ff; }
+.rift-rim { fill: none; stroke: rgba(255, 255, 255, 0.07); stroke-width: 1.5; }
 
-.spot-top     { grid-column: 1; grid-row: 1; }
-.spot-jungle  { grid-column: 2; grid-row: 1; }
-.spot-mid     { grid-column: 2; grid-row: 2; }
-.spot-support { grid-column: 2; grid-row: 3; }
-.spot-bottom  { grid-column: 3; grid-row: 3; }
+/* Prozentwerte, nicht Pixel: die Plätze wachsen mit der Karte. Die Werte
+   folgen der echten Aufstellung - Top oben links, der Jungler dazwischen,
+   Mid in der Mitte, Botlane unten rechts - und sind so gesetzt, dass sich
+   auch bei der grössten Karte nichts überlappt. */
+.spot-top     { left: 3%;  top: 3%; }
+.spot-jungle  { left: 4%;  top: 37%; }
+.spot-mid     { left: 36%; top: 35%; }
+.spot-support { left: 30%; top: 69%; }
+.spot-bottom  { left: 66%; top: 61%; }
 
+/* Eine Marke, kein Steckbrief: Rolle, Bild, Name, Punkte. Preis, Anpfiff und
+   Gegner stehen in der Liste unter der Karte - hier wäre dafür kein Platz,
+   und die Karte soll lesbar bleiben. */
 .spot {
-  position: relative; z-index: 1;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  grid-template-areas: "role pts" "main main" "when cap";
-  align-items: center; gap: var(--s1);
-  padding: var(--s2) var(--s2) 7px;
+  position: absolute; z-index: 1; width: 27%; min-width: 74px; max-width: 116px;
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  padding: 5px 5px 6px;
   border-radius: var(--r-md);
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0) 46%),
-    rgba(8, 10, 13, 0.72);
+    linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0) 46%),
+    rgba(8, 10, 13, 0.78);
   border: 1px solid var(--line);
   border-top-color: var(--line-strong);
-  box-shadow: var(--shadow-1);
+  box-shadow: var(--shadow-2);
   backdrop-filter: blur(3px);
   -webkit-backdrop-filter: blur(3px);
 }
 .spot.cap {
   border-color: var(--accent-line);
   background:
-    linear-gradient(180deg, rgba(224, 171, 90, 0.16), rgba(224, 171, 90, 0.05) 60%),
-    rgba(8, 10, 13, 0.72);
+    linear-gradient(180deg, rgba(224, 171, 90, 0.2), rgba(224, 171, 90, 0.06) 60%),
+    rgba(8, 10, 13, 0.78);
 }
-.spot.locked { opacity: 0.66; }
+.spot.locked { opacity: 0.7; }
 .spot.empty { border-style: dashed; }
 
-/* "SUPPORT" ist das längste Label und teilt sich die Zeile mit der
-   Punktzahl - eng gesetzt und abgeschnitten, damit beide nie kollidieren. */
 .spot-role {
-  grid-area: role; min-width: 0; font-size: 0.5rem; letter-spacing: 0.06em;
+  max-width: 100%; font-size: 0.5rem; letter-spacing: 0.06em;
   color: var(--text-dim); font-weight: 800; text-transform: uppercase;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .spot.cap .spot-role { color: var(--accent); }
-.spot-pts {
-  grid-area: pts; font-family: var(--mono); font-weight: 740;
-  font-size: 0.9375rem; letter-spacing: -0.03em; color: var(--accent);
-  font-variant-numeric: tabular-nums;
-}
-.spot-pts.zero { color: var(--text-dim); font-weight: 500; }
 
 .spot-main {
-  grid-area: main; display: flex; flex-direction: column; align-items: center;
-  gap: var(--s1); width: 100%; min-width: 0; padding: var(--s1) 0 2px;
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  width: 100%; min-width: 0; padding: 0;
   background: none; border: none; color: var(--text); text-align: center;
 }
 .spot-main[disabled] { cursor: default; }
-.spot-main .avatar { width: 42px; height: 42px; }
+.spot-main .avatar { width: 34px; height: 34px; }
 .spot.empty .spot-main .avatar { color: var(--accent); border-style: dashed; }
-/* Profinamen sind kurz ("Caps", "Faker"), aber nicht alle - lieber zwei
-   Zeilen umbrechen als mitten im Namen abschneiden. */
 .spot-name {
-  display: block; max-width: 100%; font-weight: 650; font-size: 0.75rem;
-  line-height: 1.2; letter-spacing: -0.01em; overflow-wrap: anywhere;
+  display: block; max-width: 100%; font-weight: 650; font-size: 0.6875rem;
+  line-height: 1.15; letter-spacing: -0.01em;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.spot-sub {
-  display: block; font-family: var(--mono); font-size: 0.5625rem; color: var(--text-dim);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;
+/* Team und Preis nur, wo die Marke gross genug dafuer ist. */
+.spot-sub { display: none; }
+
+.spot-pts {
+  font-family: var(--mono); font-weight: 740; font-size: 0.8125rem;
+  letter-spacing: -0.03em; color: var(--accent); font-variant-numeric: tabular-nums;
+  line-height: 1.1;
 }
-.spot-when, .spot-lock {
-  grid-area: when; font-size: 0.5625rem; line-height: 1.2;
-  align-self: center; color: var(--text-dim);
-}
-.spot-lock { color: var(--live); font-weight: 650; }
+.spot-pts.zero { color: var(--text-dim); font-weight: 500; }
+
 .spot-cap {
-  grid-area: cap; justify-self: end;
-  width: 22px; height: 22px; border-radius: 50%; padding: 0;
-  font-size: 0.6875rem; font-weight: 800; line-height: 1;
+  position: absolute; right: -6px; bottom: -6px;
+  width: 20px; height: 20px; border-radius: 50%; padding: 0;
+  font-size: 0.625rem; font-weight: 800; line-height: 1;
   background: var(--mat-2); color: var(--text-dim); border: 1px solid var(--line-strong);
 }
 .spot-cap.on {
   background: linear-gradient(180deg, #eec27c, var(--accent));
   color: var(--accent-ink); border-color: transparent;
-  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 .spot-cap[disabled] { opacity: 0.3; cursor: default; }
 
 @media (min-width: 560px) {
-  .rift { gap: var(--s3); padding: var(--s4) var(--s3); }
-  .spot { padding: var(--s3) var(--s3) var(--s2); }
-  .spot-main .avatar { width: 56px; height: 56px; }
+  .spot { padding: var(--s2) var(--s2) 7px; }
+  .spot-main .avatar { width: 44px; height: 44px; }
   .spot-role { font-size: 0.5625rem; letter-spacing: 0.1em; }
-  .spot-name { font-size: 0.9375rem; }
-  .spot-sub, .spot-when, .spot-lock { font-size: 0.6875rem; }
-  .spot-pts { font-size: 1.125rem; }
-  .spot-cap { width: 26px; height: 26px; font-size: 0.75rem; }
+  .spot-name { font-size: 0.8125rem; }
+  .spot-sub {
+    display: block; font-family: var(--mono); font-size: 0.5938rem;
+    color: var(--text-dim); max-width: 100%;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .spot-pts { font-size: 0.9375rem; }
+  .spot-cap { width: 24px; height: 24px; font-size: 0.6875rem; }
 }
 
-/* Auf dem großen Bildschirm ist Platz für alle fünf nebeneinander. Die
- * Diagonale bleibt als Versatz erhalten - Top oben, Botlane unten, und die
- * beiden Botlane-Plätze stehen auf gleicher Höhe, weil sie zusammen spielen.
- * Das spart gegenüber dem 3x3-Raster gut die Hälfte an Höhe. */
+/* Am Schreibtisch ist die Karte schnell riesig - eine quadratische Flaeche
+   ueber die volle Spaltenbreite waere hoeher als der Bildschirm. Deckeln und
+   mittig setzen. */
 @media (min-width: 680px) {
-  .rift { grid-template-columns: repeat(5, minmax(0, 1fr)); padding-bottom: var(--s4); }
-  .spot-top     { grid-column: 1; grid-row: 1; margin-top: 0; }
-  .spot-jungle  { grid-column: 2; grid-row: 1; margin-top: 22px; }
-  .spot-mid     { grid-column: 3; grid-row: 1; margin-top: 44px; }
-  .spot-support { grid-column: 4; grid-row: 1; margin-top: 66px; }
-  .spot-bottom  { grid-column: 5; grid-row: 1; margin-top: 66px; }
-  /* In der Reihe steht die Diagonale flacher - der Fluss dreht mit. */
-  .rift .river {
-    background:
-      linear-gradient(74deg, transparent 45.8%, rgba(120, 214, 226, 0.14) 46.4%,
-        rgba(150, 232, 240, 0.42) 49.4%, rgba(170, 240, 246, 0.48) 50%,
-        rgba(150, 232, 240, 0.42) 50.6%, rgba(120, 214, 226, 0.14) 53.6%, transparent 54.2%),
-      linear-gradient(74deg, transparent 44.4%, rgba(255, 255, 255, 0.09) 45%,
-        transparent 45.8%, transparent 54.2%, rgba(255, 255, 255, 0.09) 55%, transparent 55.6%);
-  }
+  .rift { max-width: 520px; margin-left: auto; margin-right: auto; }
 }
+
+/* ------------------------------------------------------ Wann, gegen wen
+ *
+ * Auf den Plätzen der Karte ist dafür kein Platz, und untereinander lässt
+ * sich die Woche auf einen Blick lesen: welcher Platz läuft schon, welchen
+ * kann man noch tauschen.
+ */
+.fixtures { margin-bottom: var(--s3); }
+.fixtures h3 {
+  font-size: 0.625rem; text-transform: uppercase; letter-spacing: 0.1em;
+  font-weight: 600; color: var(--text-dim); margin: 0 0 var(--s2);
+}
+.fx {
+  display: grid; grid-template-columns: 4.2rem minmax(0, 1fr) auto;
+  gap: var(--s2); align-items: baseline;
+  padding: 5px 0; font-size: 0.75rem;
+  border-bottom: 1px solid var(--line);
+}
+.fx:last-child { border-bottom: none; }
+.fx-role {
+  font-size: 0.5938rem; text-transform: uppercase; letter-spacing: 0.08em;
+  font-weight: 700; color: var(--text-dim);
+}
+.fx-who { font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.fx-vs { color: var(--text-dim); font-weight: 400; }
+.fx-when {
+  font-family: var(--mono); font-size: 0.6875rem; color: var(--text-2); white-space: nowrap;
+}
+.fx-lock { color: var(--live); font-weight: 650; font-family: var(--sans); }
+.fx-none { color: var(--text-dim); font-family: var(--sans); }
+.fx.locked .fx-who { color: var(--text-dim); }
+.fx.empty .fx-who { color: var(--text-dim); font-weight: 400; }
+
+/* ------------------------------------------------- Woher die Punkte kommen
+ *
+ * Ein Balken aus bis zu vier Teilen plus die Rohwerte je Spiel. "Ø 18.4"
+ * sagt nur, dass jemand gut ist; das hier sagt warum - ein Support mit
+ * lauter Assists sieht anders aus als ein Midlaner mit Kills.
+ */
+.src { display: block; margin-top: 3px; }
+.src-bar {
+  display: flex; height: 3px; border-radius: 100px; overflow: hidden;
+  background: rgba(255, 255, 255, 0.06); max-width: 170px;
+}
+.src-bar i { display: block; width: var(--w, 0%); height: 100%; }
+.src-bar .s-k { background: var(--live); }
+.src-bar .s-a { background: var(--violet); }
+.src-bar .s-cs { background: var(--accent); }
+.src-bar .s-w { background: var(--good); }
+.src-txt {
+  display: block; font-family: var(--mono); font-size: 0.5938rem;
+  color: var(--text-dim); margin-top: 2px;
+}
+.src-legend {
+  font-size: 0.6875rem; color: var(--text-dim); line-height: 1.6;
+  margin: var(--s3) 0 0;
+}
+.src-legend span { font-weight: 650; }
+.src-legend .k { color: var(--live); }
+.src-legend .a { color: var(--violet); }
+.src-legend .cs { color: var(--accent); }
+.src-legend .w { color: var(--good); }
 
 /* =========================================================================
    Spielerzeilen und Listen

@@ -237,11 +237,19 @@ check("Verlierer des Bo1 bekommt ihn nicht",
 check("Anpfiffe fuer die Sperren gesammelt",
       len(state["fixtures"].get(ROUND_KEY, {})) == 3, state["fixtures"])
 check("Team ohne ID wird ueber das Kuerzel aufgeloest",
-      state["fixtures"][ROUND_KEY].get("t-gamma") == int(SOON.timestamp()),
+      (state["fixtures"][ROUND_KEY].get("t-gamma") or {}).get("t") == int(SOON.timestamp()),
       state["fixtures"].get(ROUND_KEY))
 check("Frueheste Partie je Team zaehlt",
-      state["fixtures"][ROUND_KEY]["t-beta"] == int(PAST.timestamp()),
+      state["fixtures"][ROUND_KEY]["t-beta"]["t"] == int(PAST.timestamp()),
       (state["fixtures"][ROUND_KEY].get("t-beta"), int(PAST.timestamp())))
+# Der Gegner kommt aus demselben Eintrag - ohne ihn steht in der App nur eine
+# Uhrzeit, und "Sa 17:00" sagt weniger als "Sa 17:00 gegen GAM".
+check("Gegner steht beim Anpfiff",
+      state["fixtures"][ROUND_KEY]["t-gamma"]["o"] == "BET",
+      state["fixtures"][ROUND_KEY].get("t-gamma"))
+check("Und beim Gegner andersherum",
+      state["fixtures"][ROUND_KEY]["t-beta"]["o"] in ("ALP", "GAM"),
+      state["fixtures"][ROUND_KEY].get("t-beta"))
 
 # Punkte nachrechnen: alpha-top 4/1/6 280 -> 8+9-0.5+5.6 = 22.1
 # zweites Spiel 6/0/8 310 -> 12+12+0+6.2 = 30.2, +2 kein Tod, +3 Serien-Sieg = 35.2

@@ -84,7 +84,10 @@ SCORING_VERSION = 1
 #   2 -> 3: der Feed liefert ohne startingTime gar keinen Endstand, sondern
 #           einen Platzhalter. Die Spielzeit wird jetzt gesucht. Setzt
 #           nebenbei die Fehlzähler der 228 Matches aus Lauf 2 zurück.
-DATA_VERSION = 3
+#   3 -> 4: Rundeneinträge führen jetzt auch Kills, Tode, Assists, Creep
+#           Score und Siege mit. Alte Einträge haben die Felder nicht - ohne
+#           Neuaufbau stünde im Markt überall 0/0/0.
+DATA_VERSION = 4
 
 # Budget für den Kader (5 Spieler). Preise liegen zwischen 4.0 und 12.0,
 # ein Kader kostet also mindestens 20.0 - 35.0 lässt genau einen Topspieler
@@ -713,12 +716,32 @@ def load_data():
     return base
 
 
-def add_to_round(data, round_key, start, end, player_id, pts, games=1):
+# Der Eintrag je Spieler und Runde: [Punkte, Spiele, Kills, Tode, Assists,
+# Creep Score, Siege]. Ältere Arbeitsstände haben nur die ersten beiden Werte -
+# darum wird überall aufgefüllt statt auf die Länge vertraut.
+ROUND_ENTRY_LEN = 7
+
+
+def add_to_round(data, round_key, start, end, player_id, pts, games=1, line=None):
     r = data["rounds"].setdefault(round_key, {"start": iso(start), "end": iso(end), "p": {}})
     r.setdefault("p", {})
-    entry = r["p"].get(player_id) or [0, 0]
-    entry = [round(entry[0] + pts, 2), entry[1] + games]
+    entry = list(r["p"].get(player_id) or [])
+    entry += [0] * (ROUND_ENTRY_LEN - len(entry))
+    entry[0] = round(entry[0] + pts, 2)
+    entry[1] += games
+    if line:
+        entry[2] += line.get("k") or 0
+        entry[3] += line.get("d") or 0
+        entry[4] += line.get("a") or 0
+        entry[5] += line.get("cs") or 0
+        entry[6] += 1 if line.get("w") else 0
     r["p"][player_id] = entry
+
+
+def round_entry(raw):
+    """Ein Rundeneintrag, aufgefüllt auf die volle Länge."""
+    entry = list(raw or [])
+    return entry + [0] * (ROUND_ENTRY_LEN - len(entry))
 
 
 # ---------------------------------------------------------------- Preise
@@ -741,7 +764,8 @@ def compute_prices(data, round_key):
         return data["prices"][round_key]
     tally = {}
     for key in past:
-        for pid, (pts, games) in (data["rounds"][key].get("p") or {}).items():
+        for pid, raw in (data["rounds"][key].get("p") or {}).items():
+            pts, games = round_entry(raw)[:2]
             t = tally.setdefault(pid, [0.0, 0])
             t[0] += pts
             t[1] += games
@@ -792,19 +816,31 @@ def prune(data, now):
 
 def season_totals(data, now):
     """Saisonsummen je Spieler aus den Rundensummen - immer neu gerechnet,
-    damit sie nicht durch doppelt gezählte Spiele auseinanderlaufen können."""
+    damit sie nicht durch doppelt gezählte Spiele auseinanderlaufen können.
+
+    Kills, Tode, Assists, Creep Score und Siege laufen mit. Sie stehen
+    absichtlich hier und nicht in `lines`: Spielzeilen werden nach 35 Tagen
+    weggeräumt, die Saisonwertung soll aber das ganze Jahr abdecken. Der Markt
+    kann damit zeigen, *wodurch* jemand seine Punkte hat.
+    """
     year = str(now.year)
+    keys = ("k", "d", "a", "cs", "wins")
     for p in data["players"].values():
         p["pts"], p["games"], p["avg"] = 0.0, 0, 0.0
+        for key in keys:
+            p[key] = 0
     for r in data["rounds"].values():
         if not (r.get("start") or "").startswith(year):
             continue
-        for pid, (pts, games) in (r.get("p") or {}).items():
+        for pid, raw in (r.get("p") or {}).items():
             player = data["players"].get(pid)
             if not player:
                 continue
+            pts, games, k, d, a, cs, wins = round_entry(raw)
             player["pts"] = round(player["pts"] + pts, 2)
             player["games"] += games
+            for key, value in zip(keys, (k, d, a, cs, wins)):
+                player[key] += value
     for p in data["players"].values():
         if p["games"]:
             p["avg"] = round(p["pts"] / p["games"], 2)
@@ -813,11 +849,15 @@ def season_totals(data, now):
 # ---------------------------------------------------------------- Spielplan
 
 def collect_fixtures(now, index=None):
-    """Erster Anpfiff jedes Teams, je Runde.
+    """Erster Anpfiff jedes Teams, je Runde - samt Gegner.
 
     Daran hängt die Sperre: sobald das Team eines Spielers angepfiffen hat, ist
     dieser Platz fest. Nur die laufende und die kommende Runde - ältere braucht
     niemand mehr, spätere stehen im Spielplan noch nicht verlässlich.
+
+    Der Gegner ist für die Sperre egal und nur für die Anzeige da: "Sa 17:00
+    gegen G2" sagt mehr als "Sa 17:00". Er kommt aus demselben Eintrag, kostet
+    also keine zusätzliche Anfrage.
     """
     leagues = api("getLeagues")
     if not leagues:
@@ -840,14 +880,25 @@ def collect_fixtures(now, index=None):
             key = round_bounds(start)[0]
             if key not in wanted:
                 continue
-            for team in match.get("teams") or []:
+            teams = match.get("teams") or []
+            for i, team in enumerate(teams):
                 tid = resolve_team(team, index)
                 if not tid:
                     continue
+                # Der andere Eintrag desselben Matches ist der Gegner. Bei
+                # mehr als zwei Teams (gibt es nicht, aber die API verspricht
+                # es nicht) bleibt das Feld leer, statt zu raten.
+                other = teams[1 - i] if len(teams) == 2 else None
+                entry = {
+                    "t": start,
+                    "o": (other or {}).get("code") or (other or {}).get("name") or "",
+                    "oid": resolve_team(other, index) if other else "",
+                }
                 per_round = found.setdefault(key, {})
-                if tid not in per_round or start < per_round[tid]:
-                    per_round[tid] = start
-    return {key: {tid: int(dt.timestamp()) for tid, dt in teams.items()}
+                if tid not in per_round or start < per_round[tid]["t"]:
+                    per_round[tid] = entry
+    return {key: {tid: {"t": int(e["t"].timestamp()), "o": e["o"], "oid": e["oid"]}
+                  for tid, e in teams.items()}
             for key, teams in found.items()}
 
 
@@ -908,6 +959,8 @@ def push(out):
         "league": p.get("league"), "image": p.get("image"),
         "seasonPts": p.get("pts", 0), "seasonGames": p.get("games", 0),
         "seasonAvg": p.get("avg", 0),
+        "seasonK": p.get("k", 0), "seasonD": p.get("d", 0), "seasonA": p.get("a", 0),
+        "seasonCs": p.get("cs", 0), "seasonWins": p.get("wins", 0),
     } for pid, p in out["players"].items() if p.get("active")], first=True)
 
     keys = sorted(out["rounds"])[-PUSH_ROUNDS:]
@@ -917,8 +970,10 @@ def push(out):
     } for k in keys])
 
     send("playerRound", [
-        {"roundKey": k, "playerId": pid, "pts": entry[0], "games": entry[1]}
-        for k in keys for pid, entry in (out["rounds"][k].get("p") or {}).items()
+        {"roundKey": k, "playerId": pid, "pts": e[0], "games": e[1]}
+        for k in keys
+        for pid, e in ((pid, round_entry(raw))
+                       for pid, raw in (out["rounds"][k].get("p") or {}).items())
     ])
 
     send("prices", [
@@ -936,8 +991,9 @@ def push(out):
 
     fixture_rounds = sorted(out["fixtures"])
     send("fixtures", [
-        {"roundKey": k, "teamId": tid, "firstStart": start}
-        for k in fixture_rounds for tid, start in out["fixtures"][k].items()
+        {"roundKey": k, "teamId": tid, "firstStart": e["t"],
+         "opponent": e.get("o", ""), "opponentId": e.get("oid", "")}
+        for k in fixture_rounds for tid, e in out["fixtures"][k].items()
     ], replaceRounds=fixture_rounds)
 
     send("done", [], scoring=SCORING)
@@ -1069,7 +1125,8 @@ def main(dry_run=False):
 
         for record in match_lines:
             data["lines"].append(record)
-            add_to_round(data, round_key, r_start, r_end, record["p"], record["pts"])
+            add_to_round(data, round_key, r_start, r_end, record["p"], record["pts"],
+                         line=record)
             # Spieler, die erst über die Livestats aufgetaucht sind (Ersatz),
             # gehören ebenfalls in die Spielerliste.
             if record["p"] not in data["players"] and record["p"] in roster_players:

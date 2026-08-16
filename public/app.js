@@ -327,10 +327,81 @@ function leagueHeadHtml() {
 }
 
 /**
- * Ein Platz auf der Karte. Die Rollen stehen diagonal wie die Lanes auf
- * Summoner's Rift - Top oben links, Bot unten rechts. Das liest sich schneller
- * als fuenf gleiche Zeilen untereinander und macht sofort klar, welche Rolle
- * noch frei ist.
+ * Die Kluft der Beschwörer als Auswahlfläche.
+ *
+ * Selbst gezeichnet und nicht Riots Artwork: ein Bild müsste nachgeladen
+ * werden, wäre nicht meins und liesse sich nicht einfärben. Ein SVG kostet
+ * nichts, bleibt bei jeder Grösse scharf und nutzt dieselben Farbvariablen
+ * wie der Rest der Seite.
+ *
+ * Die Geometrie folgt der echten Karte: quadratisches Feld, roter Nexus unten
+ * links, blauer oben rechts, drei Lanes (aussen herum und einmal diagonal),
+ * der Fluss quer dazu von oben links nach unten rechts. Die Plätze liegen
+ * darauf, wo die Rolle wirklich spielt.
+ */
+function riftMapSvg() {
+  const lane = (d, cls) => `<path d="${d}" class="${cls}"/>`;
+  return `
+  <svg class="rift-map" viewBox="0 0 100 100" preserveAspectRatio="none"
+       aria-hidden="true" focusable="false">
+    <defs>
+      <linearGradient id="rift-ground" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#24331d"/>
+        <stop offset="0.5" stop-color="#1d2c20"/>
+        <stop offset="1" stop-color="#16211d"/>
+      </linearGradient>
+      <radialGradient id="rift-red" cx="0.5" cy="0.5">
+        <stop offset="0" stop-color="#ff5a48" stop-opacity="0.85"/>
+        <stop offset="0.45" stop-color="#ff5a48" stop-opacity="0.28"/>
+        <stop offset="1" stop-color="#ff5a48" stop-opacity="0"/>
+      </radialGradient>
+      <radialGradient id="rift-blue" cx="0.5" cy="0.5">
+        <stop offset="0" stop-color="#4ab4ff" stop-opacity="0.85"/>
+        <stop offset="0.45" stop-color="#4ab4ff" stop-opacity="0.28"/>
+        <stop offset="1" stop-color="#4ab4ff" stop-opacity="0"/>
+      </radialGradient>
+      <radialGradient id="rift-fog" cx="0.5" cy="0.5">
+        <stop offset="0.6" stop-color="#030507" stop-opacity="0"/>
+        <stop offset="1" stop-color="#030507" stop-opacity="0.72"/>
+      </radialGradient>
+    </defs>
+
+    <rect width="100" height="100" fill="url(#rift-ground)"/>
+
+    <!-- Jungle: die vier Viertel zwischen den Lanes, dunkler als die Wege -->
+    <path d="M13 13 H49 L13 49 Z" class="rift-jungle"/>
+    <path d="M87 87 H51 L87 51 Z" class="rift-jungle"/>
+    <path d="M60 13 H87 V40 Z" class="rift-jungle"/>
+    <path d="M40 87 H13 V60 Z" class="rift-jungle"/>
+
+    <!-- Der Fluss quer zur Mid-Lane, von oben links nach unten rechts -->
+    <path d="M0 30 L70 100 L84 100 L0 16 Z" class="rift-river"/>
+
+    <!-- Die drei Lanes: aussen herum und einmal quer. Erst ein dunkler Rand,
+         damit die hellen Wege sich vom Untergrund abheben. -->
+    ${lane("M8 92 V8 H92", "rift-lane-edge")}
+    ${lane("M8 92 H92 V8", "rift-lane-edge")}
+    ${lane("M14 86 L86 14", "rift-lane-edge")}
+    ${lane("M8 92 V8 H92", "rift-lane")}
+    ${lane("M8 92 H92 V8", "rift-lane")}
+    ${lane("M14 86 L86 14", "rift-lane")}
+
+    <!-- Basen: rot unten links, blau oben rechts, wie im Bild -->
+    <circle cx="8" cy="92" r="30" fill="url(#rift-red)"/>
+    <circle cx="92" cy="8" r="30" fill="url(#rift-blue)"/>
+    <circle cx="8" cy="92" r="4.5" class="rift-nexus red"/>
+    <circle cx="92" cy="8" r="4.5" class="rift-nexus blue"/>
+
+    <rect width="100" height="100" fill="url(#rift-fog)"/>
+    <rect x="0.75" y="0.75" width="98.5" height="98.5" rx="8" class="rift-rim"/>
+  </svg>`;
+}
+
+/**
+ * Ein Platz auf der Karte. Er sitzt dort, wo die Rolle spielt: Top oben links,
+ * Mid in der Mitte, Botlane unten rechts, der Jungler zwischen den Lanes.
+ * Das liest sich schneller als fuenf gleiche Zeilen untereinander und macht
+ * sofort klar, welche Rolle noch frei ist.
  */
 function spotHtml(role, slot) {
   const filled = !!slot;
@@ -346,20 +417,36 @@ function spotHtml(role, slot) {
        <span class="spot-name">frei</span>
        <span class="spot-sub">wählen</span>`;
 
-  const when = !filled ? ""
-    : locked ? '<span class="spot-lock">gesperrt</span>'
-    : slot.kickoff ? `<span class="spot-when">${esc(whenShort(slot.kickoff))}</span>`
-    : '<span class="spot-when">kein Spiel</span>';
-
   return `
     <div class="spot spot-${role} ${cap ? "cap" : ""} ${locked ? "locked" : ""} ${filled ? "" : "empty"}">
       <span class="spot-role">${esc(ROLE_LABEL[role])}</span>
       <button class="spot-main" data-pick="${role}" ${locked ? "disabled" : ""}
               title="${filled ? "Tauschen" : "Spieler wählen"}">${inner}</button>
       <span class="spot-pts ${pts ? "" : "zero"}">${num(pts)}</span>
-      ${when}
       <button class="spot-cap ${cap ? "on" : ""}" data-cap="${role}"
               ${!filled || locked ? "disabled" : ""} title="Kapitän: doppelte Punkte">C</button>
+    </div>`;
+}
+
+/**
+ * Wann und gegen wen. Steht unter der Karte statt darauf - auf den Plaetzen
+ * waere kein Platz dafuer, und untereinander laesst sich die Woche auf einen
+ * Blick lesen.
+ */
+function fixtureRowHtml(role, slot) {
+  if (!slot) {
+    return `<div class="fx empty"><span class="fx-role">${esc(ROLE_LABEL[role])}</span>
+      <span class="fx-who">noch frei</span></div>`;
+  }
+  const when = slot.locked ? '<span class="fx-lock">läuft schon</span>'
+    : slot.kickoff ? esc(whenLong(slot.kickoff))
+    : '<span class="fx-none">kein Spiel diese Runde</span>';
+  return `
+    <div class="fx ${slot.locked ? "locked" : ""}">
+      <span class="fx-role">${esc(ROLE_LABEL[role])}</span>
+      <span class="fx-who">${esc(slot.code || slot.team)}${
+        slot.opponent ? ` <span class="fx-vs">gegen</span> ${esc(slot.opponent)}` : ""}</span>
+      <span class="fx-when">${when}</span>
     </div>`;
 }
 
@@ -395,8 +482,12 @@ function squadPanelHtml() {
         <div class="num"><b>${num(me.cost)}</b> / ${num(budget)}</div>
       </div>
       <div class="rift">
-        <span class="river" aria-hidden="true"></span>
+        ${riftMapSvg()}
         ${ROLES.map(r => spotHtml(r.key, me.slots[r.key])).join("")}
+      </div>
+      <div class="fixtures">
+        <h3>Diese Runde</h3>
+        ${ROLES.map(r => fixtureRowHtml(r.key, me.slots[r.key])).join("")}
       </div>
       ${notes}
       <p class="sub">Ein Platz ist gesperrt, sobald das Team des Spielers sein erstes
@@ -538,6 +629,59 @@ function pct(part, total) {
   return Math.round((part / total) * 100) + " %";
 }
 
+/**
+ * Wodurch ein Spieler seine Punkte hat - je Spiel gerechnet, damit sich
+ * jemand mit 30 Spielen und jemand mit 8 vergleichen lassen.
+ *
+ * "Ø 18.4" allein sagt nur, dass jemand gut ist. Dieser Balken sagt warum:
+ * ein Support mit lauter Assists sieht anders aus als ein Midlaner mit
+ * Kills, und wer seine Punkte hauptsaechlich aus Creep Score zieht, ist
+ * verlaesslich statt spektakulaer.
+ */
+function pointSources(p) {
+  const s = state.scoring;
+  if (!s || !p.kda || !p.games) return null;
+  const g = p.games;
+  const parts = [
+    { key: "k", label: "Kills", short: "K", value: (p.kda.k || 0) * (Number(s.kill) || 0) },
+    { key: "a", label: "Assists", short: "A", value: (p.kda.a || 0) * (Number(s.assist) || 0) },
+    { key: "cs", label: "Creep Score", short: "CS", value: (p.kda.cs || 0) * (Number(s.cs) || 0) },
+    { key: "w", label: "Siege", short: "S", value: (p.kda.wins || 0) * (Number(s.seriesWin) || 0) },
+  ].filter(part => part.value > 0.05);
+  const sum = parts.reduce((a, part) => a + part.value, 0);
+  if (!sum) return null;
+  return {
+    perGame: parts.map(part => ({ ...part, perGame: part.value / g, share: part.value / sum })),
+    kda: `${(p.kda.k / g).toFixed(1)}/${(p.kda.d / g).toFixed(1)}/${(p.kda.a / g).toFixed(1)}`,
+    cs: Math.round(p.kda.cs / g),
+  };
+}
+
+function sourcesHtml(p) {
+  const src = pointSources(p);
+  if (!src) return "";
+  return `
+    <span class="src">
+      <span class="src-bar">${src.perGame.map(part =>
+        `<i class="s-${part.key}" data-w="${Math.round(part.share * 100)}"
+            title="${esc(part.label)}: ${fmtSigned(part.perGame)} je Spiel"></i>`).join("")}</span>
+      <span class="src-txt">${esc(src.kda)} · ${src.cs} CS${
+        p.kda.wins ? ` · ${p.kda.wins}× Sieg` : ""}</span>
+    </span>`;
+}
+
+/**
+ * Die Anteile der Herkunftsbalken als CSS-Variable setzen.
+ *
+ * Die strenge CSP verwirft style-Attribute im Markup, deshalb steht der
+ * Prozentwert in data-w und wandert hier in eine Variable.
+ */
+function paintSourceBars(root) {
+  root.querySelectorAll(".src-bar i[data-w]").forEach(bar => {
+    bar.style.setProperty("--w", bar.getAttribute("data-w") + "%");
+  });
+}
+
 function marketPanelHtml() {
   const market = state.market;
   if (!market) return '<div class="card"><p class="loading">Lade Markt…</p></div>';
@@ -603,7 +747,10 @@ function marketPanelHtml() {
                       <span class="line2">${esc(ROLE_LABEL[p.role] || p.role)} · ${esc(p.code || p.team)}
                         ${owned ? ' · <span class="own">im Kader</span>' : ""}
                         ${locked ? ' · <span class="lock">gesperrt</span>'
-                          : p.kickoff ? " · " + esc(whenShort(p.kickoff)) : " · kein Spiel"}</span>
+                          : p.kickoff ? ` · ${esc(whenShort(p.kickoff))}${
+                              p.opponent ? " gegen " + esc(p.opponent) : ""}`
+                          : " · kein Spiel"}</span>
+                      ${sourcesHtml(p)}
                     </span>
                   </button>
                 </td>
@@ -614,6 +761,10 @@ function marketPanelHtml() {
           </tbody>
         </table>
       </div>
+      <p class="src-legend">Der Balken zeigt, wodurch die Punkte zustande kommen:
+        <span class="k">Kills</span>, <span class="a">Assists</span>,
+        <span class="cs">Creep Score</span>, <span class="w">Siege</span>.
+        Die Zahlen darunter sind der Schnitt je Spiel.</p>
       ${matching.length > list.length ? `<p class="sub">${matching.length - list.length}
         weitere - grenze die Suche ein.</p>` : ""}`
       : '<p class="empty">Niemand gefunden.</p>'}
@@ -688,6 +839,8 @@ function wireLeague() {
     state.leagueId = null; state.league = null; state.market = null; state.standings = null;
     render();
   });
+
+  paintSourceBars(app);
 
   // Budgetbalken: Breite als CSS-Variable, damit kein Inline-Style nötig ist.
   const fill = document.getElementById("budget-fill");
@@ -830,17 +983,21 @@ function renderPicker() {
     const off = p.locked || p.tooDear;
     const why = p.locked ? "Team hat gespielt"
       : p.tooDear ? "zu teuer"
-      : (p.kickoff ? whenShort(p.kickoff) : "kein Spiel");
+      : p.kickoff ? whenShort(p.kickoff) + (p.opponent ? " gegen " + p.opponent : "")
+      : "kein Spiel";
     return `
       <button class="prow ${off ? "off" : ""} ${p.id === current ? "on" : ""}"
               data-pid="${esc(p.id)}" ${off ? "disabled" : ""}>
         ${avatar(p)}
-        <span><span class="pname">${esc(p.name)}</span>
-          <span class="sub"><br>${esc(p.code || p.team)} · ${esc(p.league || "")} · ${esc(why)}</span></span>
+        <span class="pmeta"><span class="pname">${esc(p.name)}</span>
+          <span class="line2">${esc(p.code || p.team)} · ${esc(p.league || "")} · ${esc(why)}</span>
+          ${sourcesHtml(p)}</span>
         <span class="num">Ø ${num(p.avg)}<br><span class="sub">${p.games} Sp.</span></span>
         <span class="num"><b>${num(p.price)}</b></span>
       </button>`;
   }).join("") : '<p class="empty">Niemand gefunden.</p>');
+
+  paintSourceBars(list);
 
   list.querySelectorAll("[data-pid]").forEach(btn =>
     btn.addEventListener("click", async () => {

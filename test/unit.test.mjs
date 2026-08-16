@@ -11,8 +11,9 @@
  *    passiert.
  */
 
-import { roundFor } from "../src/util.js";
+import { BUILD, roundFor } from "../src/util.js";
 import { pbkdf2Rounds } from "../src/auth.js";
+import { serverErrorMessage } from "../src/index.js";
 
 let fails = 0;
 const check = (label, cond, extra) => {
@@ -73,6 +74,20 @@ for (const value of ["100001", "1000000", "99999999"]) {
   check(`PBKDF2_ROUNDS=${value} bleibt unter der Runtime-Grenze`,
     pbkdf2Rounds({ PBKDF2_ROUNDS: value }) <= 100000);
 }
+
+console.log("\n== Fehlermeldungen ==");
+// Deployen ist ein Befehl, migrieren ein zweiter. Wer den zweiten vergisst,
+// bekam bisher nur "serverseitig etwas schiefgegangen" - eine Sackgasse.
+for (const text of ["D1_ERROR: no such column: opponent",
+                    "no such table: fixtures",
+                    "table players has no column named season_k"]) {
+  check(`Schemafehler nennt die Migration: ${text.slice(0, 28)}`,
+    /Migration/.test(serverErrorMessage(new Error(text))), serverErrorMessage(new Error(text)));
+}
+check("Alles andere bleibt allgemein",
+  serverErrorMessage(new Error("boom")) === "Da ist serverseitig etwas schiefgegangen");
+check("Auch ohne Fehlerobjekt", serverErrorMessage(undefined).length > 0);
+check("Version ist gesetzt", /^\d{4}\.\d{2}\.\d{2}/.test(BUILD), BUILD);
 
 console.log(fails ? `\n${fails} FEHLER` : "\nALLE EINHEITSTESTS BESTANDEN");
 process.exit(fails ? 1 : 0);

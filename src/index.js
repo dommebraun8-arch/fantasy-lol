@@ -82,6 +82,27 @@ async function api(request, env, url) {
   return fail(404, "Nicht gefunden");
 }
 
+/**
+ * Aus einem Serverfehler eine Meldung machen, mit der man etwas anfangen kann.
+ *
+ * "Da ist serverseitig etwas schiefgegangen" ist eine Sackgasse - man sieht
+ * nicht, ob die Datenbank fehlt, das Schema veraltet ist oder wirklich ein
+ * Fehler im Code steckt. Der haeufigste Fall in diesem Projekt ist der
+ * mittlere: deployen ist ein Befehl, migrieren ein zweiter, und wer den
+ * zweiten vergisst, steht vor genau dieser Meldung.
+ *
+ * Der Stacktrace bleibt im Log. Nach aussen geht nur die eine Zeile, die
+ * sagt, was zu tun ist.
+ */
+export function serverErrorMessage(err) {
+  const text = String((err && err.message) || err || "");
+  if (/no such column|no such table|has no column named/i.test(text)) {
+    return "Die Datenbank ist älter als der Code - es fehlt eine Migration. "
+      + "Einmal \"npm run db:remote\" laufen lassen, dann geht es weiter.";
+  }
+  return "Da ist serverseitig etwas schiefgegangen";
+}
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
@@ -92,7 +113,7 @@ export default {
       } catch (err) {
         // Nie den Stacktrace ausliefern, aber im Log soll er stehen.
         console.error("API-Fehler", url.pathname, err && err.stack ? err.stack : err);
-        return withSecurity(fail(500, "Da ist serverseitig etwas schiefgegangen"));
+        return withSecurity(fail(500, serverErrorMessage(err)));
       }
     }
 

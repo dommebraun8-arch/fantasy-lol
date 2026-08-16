@@ -197,6 +197,10 @@ def livestats_window(game_id, starting_time=None):
 
 # ---------------------------------------------------------------- Zeit/Runden
 
+def nowutc():
+    return datetime.now(timezone.utc)
+
+
 def parse_iso(s):
     """Robust gegen beide Formen, die die API liefert: volle Zeitstempel
     ("2026-02-09T17:00:00Z") und reine Daten ("2026-02-09", bei Turnieren)."""
@@ -516,23 +520,29 @@ def find_final_window(game_id, anchor, budget):
     Gibt (Fenster, Anzahl Anfragen) zurück, oder (None, n).
     """
     used = 0
+    # Ein startingTime in der Zukunft quittiert die API mit 400. Bei einem
+    # Spiel von heute Mittag liegt "Anpfiff plus vier Stunden" aber genau
+    # dort - deshalb wird jede Anfrage auf kurz vor jetzt gedeckelt.
+    latest = nowutc() - timedelta(minutes=1)
 
     def probe(when):
         nonlocal used
-        if budget.get("walks", 0) >= LIVESTATS_WALK_BUDGET:
+        if when > latest or budget.get("walks", 0) >= LIVESTATS_WALK_BUDGET:
             return None
         budget["walks"] = budget.get("walks", 0) + 1
         used += 1
         win = livestats_window(game_id, when)
         return win if last_real_frame((win or {}).get("frames")) else None
 
-    far = probe(anchor + timedelta(minutes=10 * LIVESTATS_MAX_STEPS))
+    far = probe(min(anchor + timedelta(minutes=10 * LIVESTATS_MAX_STEPS), latest))
     if far is not None:
         return far, used
 
     best, best_at = None, None
     for step in range(0, LIVESTATS_MAX_STEPS):
         at = anchor + timedelta(minutes=10 * step)
+        if at > latest:
+            break
         win = probe(at)
         if win is not None:
             best, best_at = win, at
@@ -541,7 +551,7 @@ def find_final_window(game_id, anchor, budget):
     if best is None:
         return None, used
 
-    lo, hi = best_at, best_at + timedelta(minutes=10)
+    lo, hi = best_at, min(best_at + timedelta(minutes=10), latest)
     for _ in range(4):
         mid = lo + (hi - lo) / 2
         win = probe(mid)

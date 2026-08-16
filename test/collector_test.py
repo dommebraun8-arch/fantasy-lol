@@ -167,13 +167,21 @@ def livestats_reply(gid, at):
     return {"gameMetadata": meta, "frames": frames}
 
 
+# Mitschrift aller Livestats-Abfragen, damit sich pruefen laesst, *wann*
+# gefragt wurde - ein startingTime in der Zukunft quittiert die echte API
+# naemlich mit 400.
+PROBED = []
+
+
 def fake_get(url, params=None, headers=None, tries=3):
     params = params or {}
     if "/livestats/" in url:
         gid = url.rsplit("/", 1)[-1]
+        at = collect.parse_iso(params.get("startingTime"))
+        PROBED.append(at)
         if gid not in STATS:
             return None
-        return livestats_reply(gid, collect.parse_iso(params.get("startingTime")))
+        return livestats_reply(gid, at)
 
     if url.endswith("/getLeagues"):
         return {"data": {"leagues": [{"id": LEAGUE_ID, "name": "LEC"}]}}
@@ -311,6 +319,14 @@ erschoepft = {"walks": collect.LIVESTATS_WALK_BUDGET}
 win3, used3 = collect.find_final_window("g-1", PAST, erschoepft)
 check("Bei aufgebrauchtem Budget wird nicht weitergesucht",
       win3 is None and used3 == 0, (win3 is not None, used3))
+
+# Bei einem Spiel von vorhin liegt "Anpfiff plus vier Stunden" in der Zukunft.
+# Danach zu fragen beantwortet die echte API mit 400 - im Produktivlauf ist so
+# genau ein Spiel verlorengegangen.
+PROBED.clear()
+collect.find_final_window("g-1", NOW - timedelta(minutes=20), {})
+zukunft = [t for t in PROBED if t and t > NOW]
+check("Es wird nie in die Zukunft gefragt", not zukunft, [str(t) for t in zukunft[:2]])
 
 # Ein Spiel, das der Feed gar nicht kennt, darf nicht gespeichert werden -
 # lieber beim naechsten Lauf nochmal fragen als Nullen in die App.

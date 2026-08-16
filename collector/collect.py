@@ -106,6 +106,10 @@ MAX_NEW_GAMES = int(os.environ.get("FANTASY_MAX_GAMES", "250"))
 # Wie oft je Lauf getEventDetails nachgeschlagen werden darf, wenn im
 # Spielplan kein Ergebnis steht. Begrenzt, damit ein Lauf nicht ewig dauert.
 MAX_RESULT_LOOKUPS = int(os.environ.get("FANTASY_MAX_LOOKUPS", "80"))
+# Ab wie vielen Teams im Spielplan der Markt auf tatsaechlich spielende Teams
+# eingegrenzt wird. Darunter (Saisonpause, API-Ausfall) bleibt er ungefiltert -
+# lieber zu viele Spieler zur Wahl als gar keine.
+MIN_ACTIVE_TEAMS = int(os.environ.get("FANTASY_MIN_TEAMS", "8"))
 REBUILD = os.environ.get("FANTASY_REBUILD", "").lower() in ("1", "true", "yes")
 
 SESSION = requests.Session()
@@ -877,6 +881,27 @@ def main(dry_run=False):
     data["fixtures"] = collect_fixtures(now)
     print(f"  {sum(len(v) for v in data['fixtures'].values())} Anpfiffe in "
           f"{len(data['fixtures'])} Runden")
+
+    # getTeams liefert auch längst aufgelöste Kader - viele davon ohne
+    # status-Feld, das der Filter oben deshalb durchlässt. Ergebnis beim ersten
+    # Produktivlauf: 157 "Teams" in vier Ligen. Statt auf ein Feld zu raten
+    # zählt hier der Beweis: wer diese Saison gespielt hat oder demnächst
+    # spielt, gehört in den Markt. Alle anderen behalten ihre Punkte, sind aber
+    # nicht mehr wählbar.
+    season_teams = {t.get("id") for m in matches for t in m["teams"] if t.get("id")}
+    for teams_of_round in data["fixtures"].values():
+        season_teams.update(teams_of_round)
+    if len(season_teams) >= MIN_ACTIVE_TEAMS:
+        hidden = 0
+        for entry in data["players"].values():
+            if entry.get("active") and entry.get("teamId") not in season_teams:
+                entry["active"] = False
+                hidden += 1
+        still = sum(1 for e in data["players"].values() if e.get("active"))
+        print(f"  {hidden} Spieler ohne Einsatz in dieser Saison ausgeblendet, "
+              f"{still} bleiben wählbar")
+    else:
+        print(f"  nur {len(season_teams)} Teams im Spielplan - Markt bleibt ungefiltert")
 
     out = {
         "generated": iso(now),

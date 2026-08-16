@@ -190,8 +190,11 @@ einzelner Platz und der Rest wäre weg.
 
 ### Woher die Werte kommen
 
-- **Kader und Rollen:** `getTeams` der Riot-Esports-API, nur aktive Teams der
-  vier Ligen.
+- **Kader und Rollen:** `getTeams` der Riot-Esports-API. Dort stehen auch
+  längst aufgelöste Kader, viele ohne `status`-Feld - wählbar sind deshalb nur
+  Spieler von Teams, die in dieser Saison tatsächlich gespielt haben oder
+  angesetzt sind. Ihre Punkte behalten alle anderen, sie tauchen nur nicht mehr
+  im Markt auf.
 - **Spielwerte:** der Livestats-Feed
   (`feed.lolesports.com/livestats/v1/window/<gameId>`), letzter Frame eines
   beendeten Spiels.

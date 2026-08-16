@@ -25,6 +25,8 @@ os.environ["INGEST_URL"] = BASE
 os.environ["INGEST_TOKEN"] = TOKEN
 STATE = tempfile.NamedTemporaryFile(suffix=".json", delete=False).name
 os.environ["FANTASY_STATE"] = STATE
+# Schwelle senken, damit der Markt-Filter im Test ueberhaupt greift.
+os.environ["FANTASY_MIN_TEAMS"] = "2"
 
 import collect  # noqa: E402  (erst nach den Umgebungsvariablen importieren)
 
@@ -46,7 +48,10 @@ def check(label, cond, extra=""):
 
 NOW = datetime.now(timezone.utc)
 LEAGUE_ID = "lec-id"
-TEAMS = [("t-alpha", "ALP"), ("t-beta", "BET"), ("t-gamma", "GAM")]
+TEAMS = [("t-alpha", "ALP"), ("t-beta", "BET"), ("t-gamma", "GAM"),
+         # Steht in getTeams, taucht aber in keinem Match auf - so wie die
+         # laengst aufgeloesten Kader, die die echte API mitliefert.
+         ("t-ghost", "GHO")]
 ROLES = collect.ROLES
 
 # Beide Matches muessen in der *laufenden* Runde liegen, sonst pruefen die
@@ -152,7 +157,11 @@ check("Sammler meldet Erfolg", code == 0, f"exit {code}")
 
 with open(STATE, encoding="utf-8") as f:
     state = json.load(f)
-check("Arbeitsstand enthaelt alle Spieler", len(state["players"]) == 15, len(state["players"]))
+check("Arbeitsstand enthaelt alle Spieler", len(state["players"]) == 20, len(state["players"]))
+check("Geisterteam ist nicht mehr waehlbar",
+      state["players"]["t-ghost-top"]["active"] is False, state["players"]["t-ghost-top"])
+check("Spielende Teams bleiben waehlbar",
+      state["players"]["t-alpha-top"]["active"] is True, state["players"]["t-alpha-top"])
 check("Alle Spiele verarbeitet", sorted(state["processed"]) == ["g-1", "g-2", "g-3"], state["processed"])
 # Bo1 ohne Formatangabe: frueher wurde so ein Match komplett verworfen.
 bo1_round = collect.round_bounds(LAST_WEEK)[0]
@@ -189,7 +198,8 @@ league_id = r.json()["league"]["id"]
 
 market = s.get(f"{BASE}/api/leagues/{league_id}/market").json()
 by_id = {p["id"]: p for p in market["players"]}
-check("Alle Spieler sind im Markt", len(market["players"]) == 15, len(market["players"]))
+check("Nur spielende Teams stehen im Markt", len(market["players"]) == 15, len(market["players"]))
+check("Geisterspieler fehlt im Markt", "t-ghost-top" not in by_id, list(by_id)[:3])
 check("Rolle wurde uebernommen", by_id["t-alpha-top"]["role"] == "top", by_id.get("t-alpha-top"))
 check("Team wurde uebernommen", by_id["t-alpha-top"]["code"] == "ALP", by_id.get("t-alpha-top"))
 check("Preis liegt im Rahmen",

@@ -367,7 +367,7 @@ nav.tabs button.on .ic { opacity: 1; color: var(--accent); }
    ========================================================================= */
 
 .pcard {
-  --tint-dim: hsl(var(--hue, 30) 46% 22%);
+  --tint-dim: hsl(var(--hue, 30) 52% 24%);
   position: relative;
   aspect-ratio: 3 / 4;
   border-radius: var(--r-md);
@@ -414,6 +414,22 @@ nav.tabs button.on .ic { opacity: 1; color: var(--accent); }
 .leaguemark .fb {
   font-family: var(--mono); font-size: 0.5rem; font-weight: 800;
   letter-spacing: 0.08em; color: rgba(255, 255, 255, 0.78);
+}
+
+/* Der Farbton der Mannschaft LIEGT ÜBER dem Foto, nicht nur dahinter.
+   Dahinter allein war er unsichtbar: Riots Spielerfotos sind großformatig und
+   decken genau die Stelle ab, an der die Glut sitzt - im Ergebnis sahen fünf
+   Karten aus fünf Vereinen alle gleich dunkelviolett aus.
+
+   Ein Farbring statt einer Fläche: in der Mitte durchsichtig, damit das
+   Gesicht frei bleibt, zu den Rändern hin voll. Die Karte liest sich damit
+   als "orange" oder "violett", ohne dass der Spieler eingefärbt wird. */
+.pcard::before {
+  content: ""; position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  background:
+    radial-gradient(115% 78% at 50% 42%, transparent 26%,
+      hsl(var(--hue, 30) 80% 42% / 0.62) 100%),
+    linear-gradient(180deg, hsl(var(--hue, 30) 85% 52% / 0.22), transparent 38%);
 }
 
 /* Das Foto sitzt unten bündig und blendet nach unten weg, damit der Name

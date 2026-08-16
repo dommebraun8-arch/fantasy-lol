@@ -141,8 +141,12 @@ function cardHtml(p, opts = {}) {
     ? `<img class="portrait" src="${esc(p.image)}" alt="" loading="lazy">`
     : `<span class="mono-face" aria-hidden="true">${esc((p.name || "?").slice(0, 1).toUpperCase())}</span>`;
 
+  // Die Rolle steht bei einem Kaderplatz nur in opts, nicht am Spieler - ohne
+  // das Zusammensetzen aus gefilterten Teilen stand hier "· VIT" mit einem
+  // Trennzeichen ins Leere.
+  const r = role || p.role;
   const line = sub !== null ? sub
-    : `${ROLE_LABEL[p.role] || p.role || ""}${p.code ? " · " + p.code : ""}`;
+    : [ROLE_LABEL[r] || r, p.code || p.team].filter(Boolean).join(" · ");
 
   return `
     <div class="${cls} hue" data-hue="${teamHue(p.code || p.team)}">
@@ -519,6 +523,7 @@ function spotHtml(role, slot) {
   const card = cardHtml(slot, {
     size: "s",
     role,
+    sub: slot.code || slot.team,
     pts: slot.pts * (cap ? 2 : 1),
     ptsLabel: cap ? "Punkte ×2" : "Punkte",
     price: slot.paid,
